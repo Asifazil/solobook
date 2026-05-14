@@ -20,6 +20,7 @@ const emptyData = () => ({
   settings: [],
   estimates: [],
   creditNotes: [],
+  debitNotes: [],
   deliveryNotes: [],
   journalEntries: []
 });
@@ -288,7 +289,7 @@ export const DataProvider = ({ children }) => {
     }
 
     // Validate businessId for all tables that require it
-    const tablesRequiringBusinessId = ['parties', 'items', 'sales', 'purchases', 'expenses', 'payments', 'opticals', 'estimates', 'creditNotes', 'deliveryNotes', 'journalEntries'];
+    const tablesRequiringBusinessId = ['parties', 'items', 'sales', 'purchases', 'expenses', 'payments', 'opticals', 'estimates', 'creditNotes', 'debitNotes', 'deliveryNotes', 'journalEntries'];
     if (tablesRequiringBusinessId.includes(table) && !item.businessId) {
       console.error(`❌ Invalid ${table} entry - missing businessId:`, item);
       return false;
@@ -468,6 +469,7 @@ export const DataProvider = ({ children }) => {
         settings: [],
         estimates: [],
         creditNotes: [],
+        debitNotes: [],
         deliveryNotes: [],
         journalEntries: []
       }

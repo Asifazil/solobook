@@ -6,8 +6,142 @@ const formatDate = (dateStr) => {
   return `${day}/${month}/${year}`;
 };
 
+// Thermal receipt layout — compact single-column for 58/80mm printers
+const ThermalTemplate = ({ transaction, business, paperSize }) => {
+  if (!transaction || !business) return null;
+
+  const isSale = transaction.type === 'Sales';
+  const is58mm = paperSize === 'Thermal 58mm';
+  const width = is58mm ? '58mm' : '80mm';
+  const padding = is58mm ? '4px 6px' : '6px 10px';
+  const titleFontSize = is58mm ? '13px' : '15px';
+  const bodyFontSize = is58mm ? '10px' : '11px';
+  const smallFontSize = is58mm ? '8.5px' : '9.5px';
+  const totalFontSize = is58mm ? '13px' : '15px';
+  const dividerChar = is58mm ? '- - - - - - - - - - - - - -' : '- - - - - - - - - - - - - - - - - - -';
+
+  const advanceAmount = transaction.advance ?? 0;
+  const balanceDue = Math.max(0, (transaction.totalAmount ?? 0) - advanceAmount);
+
+  const lineStyle = { display: 'flex', justifyContent: 'space-between', marginBottom: '2px' };
+  const centerStyle = { textAlign: 'center' };
+
+  return (
+    <div style={{
+      width,
+      padding,
+      backgroundColor: '#fff',
+      color: '#000',
+      fontFamily: 'monospace, Arial, sans-serif',
+      fontSize: bodyFontSize,
+      lineHeight: '1.35',
+    }}>
+      {/* Business header */}
+      <div style={{ ...centerStyle, marginBottom: '6px' }}>
+        <div style={{ fontSize: titleFontSize, fontWeight: 'bold', letterSpacing: '0.03em' }}>{business.name}</div>
+        {business.address && <div style={{ fontSize: smallFontSize }}>{business.address}</div>}
+        {business.phone && <div style={{ fontSize: smallFontSize }}>Ph: {business.phone}</div>}
+        {business.gstNumber && <div style={{ fontSize: smallFontSize }}>GSTIN: {business.gstNumber}</div>}
+      </div>
+
+      <div style={{ textAlign: 'center', fontSize: smallFontSize }}>{dividerChar}</div>
+
+      {/* Document title */}
+      <div style={{ ...centerStyle, fontWeight: 'bold', fontSize: bodyFontSize, margin: '4px 0' }}>
+        {isSale ? 'TAX INVOICE' : 'PURCHASE BILL'}
+      </div>
+
+      <div style={{ ...lineStyle, fontSize: smallFontSize }}>
+        <span>#{transaction.invoiceNumber}</span>
+        <span>{formatDate(transaction.date)}</span>
+      </div>
+      {transaction.partyName && (
+        <div style={{ fontSize: smallFontSize, marginBottom: '2px' }}>
+          {isSale ? 'To: ' : 'From: '}<strong>{transaction.partyName}</strong>
+        </div>
+      )}
+
+      <div style={{ textAlign: 'center', fontSize: smallFontSize, margin: '4px 0' }}>{dividerChar}</div>
+
+      {/* Items */}
+      {(transaction.items || []).map((item, i) => {
+        const qty = Number(item.qty) || 0;
+        const price = Number(item.price) || 0;
+        const discPct = Number(item.discountPercent) || 0;
+        const taxRate = Number(item.taxRate) || 0;
+        const lineAfterDisc = qty * price * (1 - discPct / 100);
+        const lineTotal = item.total != null ? Number(item.total) : lineAfterDisc * (1 + taxRate / 100);
+        return (
+          <div key={i} style={{ marginBottom: '4px' }}>
+            <div style={{ fontWeight: '600', fontSize: bodyFontSize }}>{item.name}</div>
+            <div style={{ ...lineStyle, fontSize: smallFontSize }}>
+              <span>{qty} × ₹{price.toFixed(2)}{discPct ? ` (${discPct}% off)` : ''}{taxRate ? ` +${taxRate}%GST` : ''}</span>
+              <span style={{ fontWeight: '700' }}>₹{lineTotal.toFixed(2)}</span>
+            </div>
+          </div>
+        );
+      })}
+
+      <div style={{ textAlign: 'center', fontSize: smallFontSize, margin: '4px 0' }}>{dividerChar}</div>
+
+      {/* Totals */}
+      {transaction.discountAmount > 0 && (
+        <div style={lineStyle}>
+          <span>Discount{transaction.discountPercent ? ` (${transaction.discountPercent}%)` : ''}</span>
+          <span>-₹{Number(transaction.discountAmount).toFixed(2)}</span>
+        </div>
+      )}
+      <div style={lineStyle}>
+        <span>Subtotal</span>
+        <span>₹{Number(transaction.subtotal).toFixed(2)}</span>
+      </div>
+      <div style={lineStyle}>
+        <span>Tax</span>
+        <span>₹{Number(transaction.taxAmount).toFixed(2)}</span>
+      </div>
+      {transaction.roundOffAmount != null && transaction.roundOffAmount !== 0 && (
+        <div style={lineStyle}>
+          <span>Round Off</span>
+          <span>{transaction.roundOffAmount >= 0 ? '+' : ''}₹{Number(transaction.roundOffAmount).toFixed(2)}</span>
+        </div>
+      )}
+      <div style={{ textAlign: 'center', fontSize: smallFontSize, margin: '3px 0' }}>{dividerChar}</div>
+      <div style={{ ...lineStyle, fontSize: totalFontSize, fontWeight: 'bold' }}>
+        <span>TOTAL</span>
+        <span>₹{Number(transaction.totalAmount).toFixed(2)}</span>
+      </div>
+      {isSale && advanceAmount > 0 && (
+        <>
+          <div style={{ ...lineStyle, marginTop: '3px' }}>
+            <span>Advance</span>
+            <span>-₹{advanceAmount.toFixed(2)}</span>
+          </div>
+          <div style={{ ...lineStyle, fontWeight: 'bold' }}>
+            <span>Balance Due</span>
+            <span>₹{balanceDue.toFixed(2)}</span>
+          </div>
+        </>
+      )}
+
+      <div style={{ textAlign: 'center', fontSize: smallFontSize, margin: '6px 0 4px' }}>
+        Thank you! Visit again.
+      </div>
+      <div style={{ textAlign: 'center', fontSize: smallFontSize }}>{dividerChar}</div>
+    </div>
+  );
+};
+
 const InvoiceTemplate = forwardRef(({ transaction, business, paperSize = 'A4', title, partyBalance }, ref) => {
   if (!transaction || !business) return null;
+
+  // Route thermal sizes to compact receipt layout
+  if (paperSize === 'Thermal 80mm' || paperSize === 'Thermal 58mm') {
+    return (
+      <div ref={ref}>
+        <ThermalTemplate transaction={transaction} business={business} paperSize={paperSize} />
+      </div>
+    );
+  }
 
   const isSale = transaction.type === 'Sales';
   const headerTitle = title || (isSale ? 'TAX INVOICE' : 'PURCHASE BILL');
@@ -21,9 +155,9 @@ const InvoiceTemplate = forwardRef(({ transaction, business, paperSize = 'A4', t
     'A4': { width: '210mm', height: '297mm' },
     'A5': { width: '148mm', height: '210mm' },
     'Letter': { width: '216mm', height: '279mm' },
-    'Legal': { width: '216mm', height: '356mm' }
+    'Legal': { width: '216mm', height: '356mm' },
   };
-  
+
   const selectedSize = paperSizes[paperSize] || paperSizes['A4'];
   const discountAmount = transaction.discountAmount ?? 0;
   const advanceAmount = transaction.advance ?? 0;
@@ -31,12 +165,12 @@ const InvoiceTemplate = forwardRef(({ transaction, business, paperSize = 'A4', t
 
   return (
     <div ref={ref} className="invoice-for-print" style={{
-      padding: '40px', 
-      backgroundColor: 'white', 
-      color: 'black', 
-      width: selectedSize.width, 
-      minHeight: selectedSize.height, 
-      margin: 'auto', 
+      padding: '40px',
+      backgroundColor: 'white',
+      color: 'black',
+      width: selectedSize.width,
+      minHeight: selectedSize.height,
+      margin: 'auto',
       border: '1px solid #ddd',
       fontFamily: 'Arial, sans-serif',
       fontSize: '14px',
@@ -134,6 +268,12 @@ const InvoiceTemplate = forwardRef(({ transaction, business, paperSize = 'A4', t
             <span style={{ color: '#333' }}>Tax Amount</span>
             <span style={{ color: '#000' }}>₹{transaction.taxAmount?.toFixed(2)}</span>
           </div>
+          {transaction.roundOffAmount != null && transaction.roundOffAmount !== 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ color: '#333' }}>Round Off</span>
+              <span style={{ color: '#000' }}>{transaction.roundOffAmount >= 0 ? '+' : ''}₹{Number(transaction.roundOffAmount).toFixed(2)}</span>
+            </div>
+          )}
           <hr style={{ border: 'none', borderTop: '1px solid #999', margin: '8px 0' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#000' }}>Total</span>
@@ -195,5 +335,7 @@ const InvoiceTemplate = forwardRef(({ transaction, business, paperSize = 'A4', t
     </div>
   );
 });
+
+InvoiceTemplate.displayName = 'InvoiceTemplate';
 
 export default InvoiceTemplate;

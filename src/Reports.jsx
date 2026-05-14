@@ -1,34 +1,56 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { 
-  Box, Typography, Grid, Card, CardContent, Table, TableBody, 
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import {
+  Box, Typography, Grid, Card, CardContent, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Paper,
-  TextField, MenuItem, Button, Stack, Tabs, Tab,
-  Autocomplete, alpha, useTheme
+  TextField, MenuItem, Button, Stack,
+  Autocomplete, alpha, useTheme, Chip
 } from '@mui/material';
-import { 
-  FileText, Filter, Printer, Download, Search, Share2, 
-  ArrowUpRight, ArrowDownRight, TrendingUp, Receipt, Wallet
+import {
+  FileText, Filter, Printer, Download, Search, Share2,
+  ArrowUpRight, ArrowDownRight, TrendingUp, Receipt, Wallet,
+  BarChart2, Package
 } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
 import { useData } from './DataContext';
+import { useFinancialYear } from './FinancialYearContext';
+import { useConfig } from './ConfigContext';
 import { useReactToPrint } from 'react-to-print';
 import ReportTemplate from './ReportTemplate';
 
 const ReportsPage = () => {
   const theme = useTheme();
   const { currentBusiness } = useBusiness();
+  const { activeFY, currentFY } = useFinancialYear();
   const { getItems } = useData();
+  const { config } = useConfig();
   const reportRef = useRef();
-  const [paperSize, setPaperSize] = useState('A4');
-  
+  const [paperSize, setPaperSize] = useState(() => {
+    const d = config.defaultPaperSize;
+    return ['A4', 'A5', 'Letter', 'Legal'].includes(d) ? d : 'A4';
+  });
+  const _psInit = useRef(!!config.defaultPaperSize);
+  useEffect(() => {
+    if (!_psInit.current && config.defaultPaperSize) {
+      const d = config.defaultPaperSize;
+      if (['A4', 'A5', 'Letter', 'Legal'].includes(d)) setPaperSize(d);
+      _psInit.current = true;
+    }
+  }, [config.defaultPaperSize]);
+
   // States
   const [reportType, setReportType] = useState('sales'); // sales, purchases, ..., net-balance
   const [filters, setFilters] = useState({
-    dateFrom: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
-    dateTo: new Date().toISOString().split('T')[0],
+    dateFrom: (activeFY || currentFY).start,
+    dateTo: (activeFY || currentFY).end,
     partyId: '',
     itemId: ''
   });
+
+  // Sync date range when FY selector changes
+  useEffect(() => {
+    const fy = activeFY || currentFY;
+    setFilters(prev => ({ ...prev, dateFrom: fy.start, dateTo: fy.end }));
+  }, [activeFY?.start, activeFY?.end]);
 
   // Data
   const sales = getItems('sales').filter(s => s.businessId === currentBusiness?.id);
@@ -337,66 +359,77 @@ const ReportsPage = () => {
         />
       </Box>
 
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-        <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>Reports</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>Generate financial reports</Typography>
+      {/* Hero Header */}
+      <Box sx={{
+        borderRadius: 3,
+        background: 'linear-gradient(135deg, #3b0764 0%, #6d28d9 55%, #7c3aed 100%)',
+        p: { xs: 2.5, md: 3.5 }, mb: 3,
+        position: 'relative', overflow: 'hidden',
+      }}>
+        <Box sx={{ position: 'absolute', top: -40, right: -40, width: 200, height: 200, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
+        <Box sx={{ position: 'absolute', bottom: -30, right: 100, width: 150, height: 150, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.03)', pointerEvents: 'none' }} />
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', position: 'relative', flexWrap: 'wrap', gap: 2 }}>
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
+              <Box sx={{ p: 1, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.15)', display: 'flex' }}>
+                <BarChart2 size={20} color="white" />
+              </Box>
+              <Typography variant="h5" sx={{ fontWeight: 800, color: 'white', letterSpacing: '-0.01em' }}>Reports</Typography>
+            </Box>
+            <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.65)', pl: 0.5 }}>Generate and export financial reports</Typography>
+          </Box>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
+            <TextField
+              select size="small" value={paperSize}
+              onChange={(e) => setPaperSize(e.target.value)}
+              sx={{ minWidth: 85, '& .MuiOutlinedInput-root': { bgcolor: 'rgba(255,255,255,0.12)', color: 'white', borderRadius: 1.5, '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' }, '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.4)' } }, '& .MuiSelect-icon': { color: 'white' } }}
+              SelectProps={{ displayEmpty: true }}
+            >
+              <MenuItem value="A4">A4</MenuItem>
+              <MenuItem value="A5">A5</MenuItem>
+              <MenuItem value="Letter">Letter</MenuItem>
+              <MenuItem value="Legal">Legal</MenuItem>
+            </TextField>
+            <Button variant="contained" size="small" startIcon={<Printer size={16} />} onClick={handlePrint}
+              sx={{ bgcolor: 'white', color: '#6d28d9', fontWeight: 700, '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' }, borderRadius: 1.5, textTransform: 'none' }}>
+              Print
+            </Button>
+            <Button variant="outlined" size="small" startIcon={<Share2 size={16} />} onClick={handleShare}
+              sx={{ color: '#25D366', borderColor: 'rgba(37,211,102,0.6)', '&:hover': { borderColor: '#128C7E', bgcolor: 'rgba(37,211,102,0.08)' }, borderRadius: 1.5, textTransform: 'none', fontWeight: 700 }}>
+              Share
+            </Button>
+          </Stack>
         </Box>
-        <Stack direction="row" spacing={1} alignItems="center">
-          <TextField
-            select
-            size="small"
-            value={paperSize}
-            onChange={(e) => setPaperSize(e.target.value)}
-            sx={{ minWidth: 90 }}
-            SelectProps={{ displayEmpty: true }}
-          >
-            <MenuItem value="A4">A4</MenuItem>
-            <MenuItem value="A5">A5</MenuItem>
-            <MenuItem value="Letter">Letter</MenuItem>
-            <MenuItem value="Legal">Legal</MenuItem>
-          </TextField>
-          <Button variant="contained" size="small" startIcon={<Printer size={16} />} onClick={handlePrint}>
-            Print
-          </Button>
-          <Button 
-            variant="outlined" 
-            size="small"
-            startIcon={<Share2 size={16} />}
-            onClick={handleShare}
-            sx={{ color: '#25D366', borderColor: '#25D366', '&:hover': { borderColor: '#128C7E', bgcolor: 'rgba(37, 211, 102, 0.04)' } }}
-          >
-            Share
-          </Button>
-        </Stack>
-      </Stack>
+      </Box>
 
-      <Card elevation={0} sx={{ mb: 2, border: '1px solid', borderColor: 'divider' }}>
+      <Card elevation={0} sx={{ mb: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
         <CardContent sx={{ py: 2, px: 2 }}>
           <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
-            <Filter size={18} />
-            <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '0.8125rem' }}>Filters</Typography>
+            <Box sx={{ p: 0.75, borderRadius: 1, bgcolor: alpha(theme.palette.primary.main, 0.08), display: 'flex' }}>
+              <Filter size={15} color={theme.palette.primary.main} />
+            </Box>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Filters</Typography>
           </Stack>
           
           {reportType === 'net-balance' ? (
             <Typography variant="body2" color="text.secondary">Net Balance shows all customers with outstanding balance — from start to till date. No date filter applied.</Typography>
           ) : (
           <Grid container spacing={2}>
-            <Grid item xs={12} sm={6} md={3}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
               <TextField 
                 fullWidth label="From Date" type="date" value={filters.dateFrom}
                 onChange={(e) => setFilters({...filters, dateFrom: e.target.value})}
                 InputLabelProps={{ shrink: true }}
               />
             </Grid>
-            <Grid item xs={12} sm={6} md={3}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
               <TextField 
                 fullWidth label="To Date" type="date" value={filters.dateTo}
                 onChange={(e) => setFilters({...filters, dateTo: e.target.value})}
                 InputLabelProps={{ shrink: true }}
               />
             </Grid>
-            <Grid item xs={12} sm={6} md={3}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
               <Autocomplete
                 options={parties}
                 getOptionLabel={(option) => option.name}
@@ -405,7 +438,7 @@ const ReportsPage = () => {
                 renderInput={(params) => <TextField {...params} label="Filter by Party" />}
               />
             </Grid>
-            <Grid item xs={12} sm={6} md={3}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
               <Autocomplete
                 options={items}
                 getOptionLabel={(option) => option.name}
@@ -419,33 +452,56 @@ const ReportsPage = () => {
         </CardContent>
       </Card>
 
-      <Box sx={{ width: '100%', mb: 2 }}>
-        <Tabs 
-          value={reportType} 
-          onChange={(e, v) => setReportType(v)}
-          variant="scrollable"
-          scrollButtons="auto"
-          sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 40 }}
-        >
-          <Tab value="sales" label="Sales" icon={<TrendingUp size={16} />} iconPosition="start" />
-          <Tab value="purchases" label="Purchases" icon={<Receipt size={16} />} iconPosition="start" />
-          <Tab value="items-sales" label="Item Sales" icon={<TrendingUp size={16} />} iconPosition="start" />
-          <Tab value="items-purchase" label="Item Purchases" icon={<Receipt size={16} />} iconPosition="start" />
-          <Tab value="gst" label="GST" icon={<FileText size={16} />} iconPosition="start" />
-          <Tab value="trial-balance" label="Trial Balance" icon={<FileText size={16} />} iconPosition="start" />
-          <Tab value="aged-receivables" label="Aged Rec." icon={<ArrowUpRight size={16} />} iconPosition="start" />
-          <Tab value="aged-payables" label="Aged Pay." icon={<ArrowDownRight size={16} />} iconPosition="start" />
-          <Tab value="net-balance" label="Net Balance" icon={<Wallet size={16} />} iconPosition="start" />
-        </Tabs>
+      {/* Custom scrollable pill tabs */}
+      <Box sx={{ mb: 2, overflowX: 'auto', pb: 0.5, '&::-webkit-scrollbar': { height: 4 }, '&::-webkit-scrollbar-track': { bgcolor: 'transparent' }, '&::-webkit-scrollbar-thumb': { bgcolor: alpha(theme.palette.primary.main, 0.2), borderRadius: 2 } }}>
+        <Box sx={{ display: 'flex', gap: 0.75, width: 'max-content', p: 0.5, bgcolor: alpha(theme.palette.primary.main, 0.05), borderRadius: 2.5, border: '1px solid', borderColor: 'divider' }}>
+          {[
+            { value: 'sales', label: 'Sales', icon: TrendingUp },
+            { value: 'purchases', label: 'Purchases', icon: Receipt },
+            { value: 'items-sales', label: 'Item Sales', icon: Package },
+            { value: 'items-purchase', label: 'Item Purchases', icon: Package },
+            { value: 'gst', label: 'GST', icon: FileText },
+            { value: 'trial-balance', label: 'Trial Balance', icon: FileText },
+            { value: 'aged-receivables', label: 'Aged Rec.', icon: ArrowUpRight },
+            { value: 'aged-payables', label: 'Aged Pay.', icon: ArrowDownRight },
+            { value: 'net-balance', label: 'Net Balance', icon: Wallet },
+          ].map(({ value, label, icon: Icon }) => (
+            <Box key={value} onClick={() => setReportType(value)} sx={{
+              display: 'flex', alignItems: 'center', gap: 0.75,
+              px: 1.75, py: 0.75, borderRadius: 2, cursor: 'pointer',
+              bgcolor: reportType === value ? 'background.paper' : 'transparent',
+              boxShadow: reportType === value ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+              color: reportType === value ? 'primary.main' : 'text.secondary',
+              fontWeight: reportType === value ? 700 : 500,
+              fontSize: '0.825rem',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.15s',
+              userSelect: 'none',
+              '&:hover': { color: reportType === value ? 'primary.main' : 'text.primary', bgcolor: reportType === value ? 'background.paper' : alpha(theme.palette.primary.main, 0.04) },
+            }}>
+              <Icon size={14} />
+              {label}
+            </Box>
+          ))}
+        </Box>
       </Box>
 
+      {/* Report Title + Record Count */}
+      {reportConfig.rows.length > 0 && (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{reportConfig.title}</Typography>
+          <Chip label={`${reportConfig.rows.length} record${reportConfig.rows.length !== 1 ? 's' : ''}`} size="small"
+            sx={{ fontWeight: 700, bgcolor: alpha(theme.palette.primary.main, 0.08), color: 'primary.main', border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}` }} />
+        </Box>
+      )}
+
       {/* Report View */}
-      <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+      <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
         <Table size="small" sx={{ minWidth: 650 }}>
-          <TableHead>
+          <TableHead sx={{ bgcolor: 'rgba(0,0,0,0.02)', borderBottom: '2px solid', borderColor: 'divider' }}>
             <TableRow>
               {reportConfig.columns.map((col, idx) => (
-                <TableCell key={idx} align={col.align || 'left'} sx={{ fontWeight: 600, fontSize: '0.6875rem' }}>
+                <TableCell key={idx} align={col.align || 'left'} sx={{ fontWeight: 700, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'text.secondary', py: 1.5 }}>
                   {col.header}
                 </TableCell>
               ))}

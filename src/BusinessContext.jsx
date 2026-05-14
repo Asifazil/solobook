@@ -19,7 +19,8 @@ export const BusinessProvider = ({ children }) => {
     email: b.email,
     state: b.state,
     logo: b.logo || '',
-    qrCode: b.qrCode || ''
+    qrCode: b.qrCode || '',
+    fyStartMonth: b.fyStartMonth ?? 3
   }));
   
   const currentBusiness = businesses.find(b => b.id === currentBusinessId) || businesses[0];

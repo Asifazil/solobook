@@ -3,17 +3,23 @@ import {
   Box, Button, Card, CardContent, Typography, TextField, Grid,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Paper, IconButton, MenuItem, Autocomplete, InputAdornment,
-  TablePagination, Chip
+  TablePagination, Chip, Dialog
 } from '@mui/material';
-import { Plus, Trash2, Printer, ChevronLeft, FileText, Edit2 } from 'lucide-react';
+import { Plus, Trash2, Printer, ChevronLeft, FileText, Edit2, Eye, X } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
+import { useFinancialYear } from './FinancialYearContext';
+import { useConfig } from './ConfigContext';
 import { useData } from './DataContext';
+import { useDialog } from './DialogContext';
 import { useReactToPrint } from 'react-to-print';
 import InvoiceTemplate from './InvoiceTemplate';
 
 const Estimates = () => {
   const { currentBusiness } = useBusiness();
+  const { activeFY } = useFinancialYear();
   const { addItem, deleteItem, getItems } = useData();
+  const { confirm, showAlert } = useDialog();
+  const { config } = useConfig();
   const [view, setView] = useState('list');
   const [editId, setEditId] = useState(null);
   const [selectedParty, setSelectedParty] = useState(null);
@@ -23,8 +29,21 @@ const Estimates = () => {
   const [description, setDescription] = useState('');
   const [noGST, setNoGST] = useState(false);
   const [printingTx, setPrintingTx] = useState(null);
-  const [paperSize, setPaperSize] = useState('A4');
+  const [paperSize, setPaperSize] = useState(() => {
+    const d = config.defaultPaperSize;
+    return ['A4', 'A5', 'Letter', 'Legal'].includes(d) ? d : 'A4';
+  });
+  const _psInit = React.useRef(!!config.defaultPaperSize);
+  useEffect(() => {
+    if (!_psInit.current && config.defaultPaperSize) {
+      const d = config.defaultPaperSize;
+      if (['A4', 'A5', 'Letter', 'Legal'].includes(d)) setPaperSize(d);
+      _psInit.current = true;
+    }
+  }, [config.defaultPaperSize]);
   const [isSaving, setIsSaving] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewRecord, setPreviewRecord] = useState(null);
   const printRef = React.useRef();
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -33,7 +52,7 @@ const Estimates = () => {
 
   const parties = getItems('parties').filter(p => p.businessId === currentBusiness?.id && p.type === 'Customer');
   const stockItems = getItems('items').filter(i => i.businessId === currentBusiness?.id);
-  const estimates = getItems('estimates').filter(e => e.businessId === currentBusiness?.id).reverse();
+  const estimates = getItems('estimates').filter(e => e.businessId === currentBusiness?.id).filter(r => !activeFY || !r.date || (r.date >= activeFY.start && r.date <= activeFY.end)).reverse();
 
   useEffect(() => {
     if (view === 'create' && !isSaving) {
@@ -73,16 +92,16 @@ const Estimates = () => {
 
   const handleSave = async () => {
     if (!currentBusiness?.id || !selectedParty?.id || !estimateNumber?.trim() || !estimateDate) {
-      alert('Please fill party, estimate number and date.');
+      await showAlert({ title: 'Missing fields', message: 'Please fill in the party, estimate number and date.', variant: 'warning' });
       return;
     }
     const cleaned = items.filter(i => i.itemId && i.qty > 0 && i.price >= 0).map(i => ({ ...i, taxRate: noGST ? 0 : i.taxRate }));
     if (!cleaned.length) {
-      alert('Add at least one item.');
+      await showAlert({ title: 'No items', message: 'Add at least one item with a valid quantity and price.', variant: 'warning' });
       return;
     }
     if (total <= 0) {
-      alert('Total must be greater than zero.');
+      await showAlert({ title: 'Invalid total', message: 'Total must be greater than zero.', variant: 'warning' });
       return;
     }
     setIsSaving(true);
@@ -108,7 +127,7 @@ const Estimates = () => {
       }
       setView('list');
     } catch (e) {
-      alert('Save failed: ' + (e?.message || e));
+      await showAlert({ title: 'Save failed', message: 'Save failed: ' + (e?.message || e), variant: 'danger' });
     }
     setIsSaving(false);
   };
@@ -125,7 +144,8 @@ const Estimates = () => {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Delete this estimate?')) await deleteItem('estimates', id);
+    const ok = await confirm({ title: 'Delete Estimate', message: 'This estimate will be permanently deleted. This cannot be undone.', confirmLabel: 'Delete', variant: 'danger' });
+    if (ok) await deleteItem('estimates', id);
   };
 
   const doPrint = (est) => {
@@ -133,8 +153,17 @@ const Estimates = () => {
     setTimeout(() => handlePrint(), 100);
   };
 
+  const previewTx = previewRecord
+    ? { ...previewRecord, invoiceNumber: previewRecord.estimateNumber, date: previewRecord.date }
+    : null;
+
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
+      {/* Hidden print ref */}
+      <Box sx={{ position: 'absolute', left: -9999 }}>
+        <InvoiceTemplate ref={printRef} transaction={printingTx} business={currentBusiness} paperSize={paperSize} title="Estimate" />
+      </Box>
+
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1rem' }}>Estimates &amp; Quotes</Typography>
         <Button variant="contained" startIcon={<Plus size={18} />} onClick={() => setView(view === 'list' ? 'create' : 'list')}>
@@ -156,7 +185,7 @@ const Estimates = () => {
                       <TableCell>{est.partyName}</TableCell>
                       <TableCell align="right">₹{est.totalAmount?.toFixed(2)}</TableCell>
                       <TableCell align="right">
-                        <IconButton size="small" onClick={() => doPrint(est)}><Printer size={16} /></IconButton>
+                        <IconButton size="small" title="Preview" onClick={() => { setPreviewRecord(est); setPreviewOpen(true); }}><Eye size={16} /></IconButton>
                         <IconButton size="small" onClick={() => handleEdit(est)}><Edit2 size={16} /></IconButton>
                         <IconButton size="small" color="error" onClick={() => handleDelete(est.id)}><Trash2 size={16} /></IconButton>
                       </TableCell>
@@ -232,11 +261,63 @@ const Estimates = () => {
         </Card>
       )}
 
-      {printingTx && (
-        <Box sx={{ position: 'absolute', left: -9999 }}>
-          <InvoiceTemplate ref={printRef} transaction={printingTx} business={currentBusiness} paperSize={paperSize} title="Estimate" />
+      {/* Preview dialog */}
+      <Dialog open={previewOpen} onClose={() => setPreviewOpen(false)} maxWidth="md" fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 32px 80px rgba(0,0,0,0.22)' } }}>
+        {/* Gradient header */}
+        <Box sx={{ background: 'linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)', px: 3, py: 2.5, display: 'flex', alignItems: 'flex-start', gap: 2, flexShrink: 0 }}>
+          <Box sx={{ p: 1, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', mt: 0.5, flexShrink: 0 }}>
+            <Eye size={18} color="white" />
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.72)', fontWeight: 700, fontSize: '0.65rem', letterSpacing: '0.1em', lineHeight: 1 }}>
+              Estimate Preview
+            </Typography>
+            <Typography variant="h6" sx={{ color: 'white', fontWeight: 800, mt: 0.5, fontSize: '1.05rem', fontFamily: 'monospace' }}>
+              {previewRecord?.estimateNumber || '—'}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2, mt: 0.75, flexWrap: 'wrap', alignItems: 'center' }}>
+              {previewRecord?.partyName && (
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600 }}>{previewRecord.partyName}</Typography>
+              )}
+              {previewRecord?.date && (
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600 }}>{previewRecord.date}</Typography>
+              )}
+              {previewRecord?.totalAmount != null && (
+                <Box sx={{ px: 1.25, py: 0.25, bgcolor: 'rgba(255,255,255,0.18)', borderRadius: '100px', border: '1px solid rgba(255,255,255,0.25)' }}>
+                  <Typography variant="caption" sx={{ color: 'white', fontWeight: 800, fontSize: '0.8rem' }}>₹{previewRecord.totalAmount.toFixed(2)}</Typography>
+                </Box>
+              )}
+            </Box>
+          </Box>
+          <IconButton onClick={() => setPreviewOpen(false)} size="small" sx={{ color: 'rgba(255,255,255,0.75)', mt: -0.5, '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.12)' } }}>
+            <X size={18} />
+          </IconButton>
         </Box>
-      )}
+        {/* Toolbar */}
+        <Box sx={{ px: 2.5, py: 1.25, display: 'flex', alignItems: 'center', gap: 2, borderBottom: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.015)', flexShrink: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.secondary', fontSize: '0.8rem' }}>Page Size</Typography>
+            <TextField select size="small" value={paperSize} onChange={(e) => setPaperSize(e.target.value)} sx={{ minWidth: 84, '& .MuiOutlinedInput-root': { borderRadius: 1 } }}>
+              {['A4', 'A5', 'Letter', 'Legal'].map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+            </TextField>
+          </Box>
+          <Box sx={{ flex: 1 }} />
+          <Button startIcon={<Printer size={15} />} variant="contained" size="small" disableElevation
+            onClick={() => { setPreviewOpen(false); doPrint(previewRecord); }}
+            sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 1.5, bgcolor: '#0f766e', '&:hover': { bgcolor: '#0d9488' } }}>
+            Print
+          </Button>
+        </Box>
+        {/* Scrollable preview */}
+        <Box sx={{ flex: 1, overflow: 'auto', bgcolor: '#e8eaed', p: 3, display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+          <Box sx={{ filter: 'drop-shadow(0 8px 32px rgba(0,0,0,0.18))' }}>
+            <div style={{ zoom: 0.72 }}>
+              <InvoiceTemplate transaction={previewTx} business={currentBusiness} paperSize={paperSize} title="Estimate" />
+            </div>
+          </Box>
+        </Box>
+      </Dialog>
     </Box>
   );
 };

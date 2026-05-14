@@ -22,9 +22,12 @@ import Expenses from './Expenses';
 import Opticals from './Opticals';
 import Estimates from './Estimates';
 import CreditNotes from './CreditNotes';
+import DebitNotes from './DebitNotes';
 import DeliveryNotes from './DeliveryNotes';
 import Journal from './Journal';
 import CustomSection from './CustomSection';
+import { FinancialYearProvider } from './FinancialYearContext';
+import { DialogProvider } from './DialogContext';
 const AppContent = () => {
   const { isAuthenticated, loading, isAuthorized, authError, isAdmin, logout } = useAuth();
   const { currentBusiness } = useBusiness();
@@ -96,6 +99,7 @@ const AppContent = () => {
       {config.features?.opticals && config.businessType === 'opticals' && <Route path="/opticals" element={<Layout><Opticals /></Layout>} />}
       {config.features?.estimates && <Route path="/estimates" element={<Layout><Estimates /></Layout>} />}
       {config.features?.creditNotes && <Route path="/credit-notes" element={<Layout><CreditNotes /></Layout>} />}
+      {config.features?.debitNotes && <Route path="/debit-notes" element={<Layout><DebitNotes /></Layout>} />}
       {config.features?.deliveryNotes && <Route path="/delivery-notes" element={<Layout><DeliveryNotes /></Layout>} />}
       {config.features?.journal && <Route path="/journal" element={<Layout><Journal /></Layout>} />}
       {config.features?.payments && <Route path="/payment-in" element={<Layout><PaymentEntry mode="payment-in" /></Layout>} />}
@@ -120,9 +124,13 @@ function App() {
           <CssBaseline />
           <DataProvider>
             <BusinessProvider>
-              <BrowserRouter>
-                <AppContent />
-              </BrowserRouter>
+              <FinancialYearProvider>
+                <DialogProvider>
+                  <BrowserRouter>
+                    <AppContent />
+                  </BrowserRouter>
+                </DialogProvider>
+              </FinancialYearProvider>
             </BusinessProvider>
           </DataProvider>
         </ThemeProviderWrapper>

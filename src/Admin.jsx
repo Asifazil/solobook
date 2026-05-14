@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Box, Typography, Card, CardContent, TextField, Button, Grid,
   Switch, FormControlLabel, Chip, IconButton, Tooltip, Divider, Alert,
-  Tabs, Tab, Stack, Paper, MenuItem, alpha, Dialog, DialogTitle,
-  DialogContent, DialogActions
+  Tabs, Tab, Stack, Paper, MenuItem, alpha
 } from '@mui/material';
 import {
   Plus, Save, Trash2, ShieldCheck, ChevronUp, ChevronDown, X,
@@ -14,6 +13,7 @@ import {
 import { firestore } from './db';
 import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
+import { useDialog } from './DialogContext';
 
 // --- Constants ---
 const featureKeys = [
@@ -118,6 +118,8 @@ const AdminIcon = ({ name, size = 18, ...props }) => {
 // --- Main Component ---
 const Admin = () => {
   const { currentUser, isAdmin } = useAuth();
+  const { confirm } = useDialog();
+
   const [adminTab, setAdminTab] = useState('users');
 
   // Users state
@@ -131,7 +133,6 @@ const Admin = () => {
   const [selectedSection, setSelectedSection] = useState(null);
   const [sectionForm, setSectionForm] = useState(defaultSectionForm());
   const [activeTabIdx, setActiveTabIdx] = useState(0);
-  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, sectionId: null, sectionName: '' });
 
   // Orphaned sections: in user's config but no longer in adminSections
   const [orphanedSections, setOrphanedSections] = useState([]);
@@ -230,7 +231,8 @@ const Admin = () => {
   };
 
   const handleDeleteUser = async (email) => {
-    if (!window.confirm(`Remove access for ${email}?`)) return;
+    const ok = await confirm({ title: 'Remove User Access', message: `Remove access for ${email}? They will no longer be able to log in.`, confirmLabel: 'Remove', variant: 'danger' });
+    if (!ok) return;
     try {
       await deleteDoc(doc(firestore, 'userConfig', email));
       if (selectedEmail === email) resetUserForm();
@@ -385,13 +387,18 @@ const Admin = () => {
     }
   };
 
-  const confirmDeleteSection = (sectionId, sectionName) => {
-    setDeleteConfirm({ open: true, sectionId, sectionName });
+  const confirmDeleteSection = async (sectionId, sectionName) => {
+    const ok = await confirm({
+      title: `Delete "${sectionName}"`,
+      message: `This section will be permanently deleted and removed from all users who have access to it. This cannot be undone.`,
+      confirmLabel: 'Delete Section',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    handleDeleteSection(sectionId);
   };
 
-  const handleDeleteSection = async () => {
-    const { sectionId } = deleteConfirm;
-    setDeleteConfirm({ open: false, sectionId: null, sectionName: '' });
+  const handleDeleteSection = async (sectionId) => {
     try {
       // Delete from adminSections
       await deleteDoc(doc(firestore, 'adminSections', sectionId));
@@ -973,19 +980,6 @@ const Admin = () => {
         </Grid>
       )}
 
-      {/* Delete Section Confirmation Dialog */}
-      <Dialog open={deleteConfirm.open} onClose={() => setDeleteConfirm({ open: false, sectionId: null, sectionName: '' })} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700 }}>Delete Section?</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            Are you sure you want to delete <strong>{deleteConfirm.sectionName}</strong>? Users assigned this section will lose access to it.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setDeleteConfirm({ open: false, sectionId: null, sectionName: '' })}>Cancel</Button>
-          <Button variant="contained" color="error" onClick={handleDeleteSection}>Delete</Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 };

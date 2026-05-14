@@ -4,18 +4,16 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Paper, IconButton, Autocomplete, TablePagination, Dialog, MenuItem
 } from '@mui/material';
-import { Plus, Trash2, Printer, ChevronLeft, Edit2, Eye, X } from 'lucide-react';
+import { Plus, Trash2, Printer, Edit2, Eye, X } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
-import { useFinancialYear } from './FinancialYearContext';
 import { useConfig } from './ConfigContext';
 import { useData } from './DataContext';
 import { useDialog } from './DialogContext';
 import { useReactToPrint } from 'react-to-print';
 import InvoiceTemplate from './InvoiceTemplate';
 
-const CreditNotes = () => {
+const DebitNotes = () => {
   const { currentBusiness } = useBusiness();
-  const { activeFY } = useFinancialYear();
   const { config } = useConfig();
   const { addItem, deleteItem, getItems } = useData();
   const { confirm, showAlert } = useDialog();
@@ -49,13 +47,13 @@ const CreditNotes = () => {
 
   const handlePrint = useReactToPrint({ contentRef: printRef });
 
-  const parties = getItems('parties').filter(p => p.businessId === currentBusiness?.id && p.type === 'Customer');
+  const parties = getItems('parties').filter(p => p.businessId === currentBusiness?.id && p.type === 'Vendor');
   const stockItems = getItems('items').filter(i => i.businessId === currentBusiness?.id);
-  const creditNotes = getItems('creditNotes').filter(c => c.businessId === currentBusiness?.id).filter(r => !activeFY || !r.date || (r.date >= activeFY.start && r.date <= activeFY.end)).reverse();
+  const debitNotes = getItems('debitNotes').filter(d => d.businessId === currentBusiness?.id).reverse();
 
   useEffect(() => {
     if (view === 'create' && !isSaving) {
-      setNoteNumber(`CN-${Date.now().toString().slice(-6)}`);
+      setNoteNumber(`DN-${Date.now().toString().slice(-6)}`);
       setItems([{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, total: 0 }]);
       setSelectedParty(null);
       setNoteDate(new Date().toISOString().split('T')[0]);
@@ -74,7 +72,7 @@ const CreditNotes = () => {
     const item = { ...newItems[index], [field]: value };
     if (field === 'itemId') {
       const sel = stockItems.find(i => i.id === value);
-      if (sel) { item.name = sel.name; item.price = sel.salePrice; item.taxRate = sel.taxRate; }
+      if (sel) { item.name = sel.name; item.price = sel.purchasePrice || sel.salePrice || 0; item.taxRate = sel.taxRate; }
     }
     item.total = item.qty * item.price * (1 + (item.taxRate || 0) / 100);
     newItems[index] = item;
@@ -87,7 +85,7 @@ const CreditNotes = () => {
 
   const handleSave = async () => {
     if (!currentBusiness?.id || !selectedParty?.id || !noteNumber?.trim() || !noteDate) {
-      await showAlert({ title: 'Missing fields', message: 'Please fill in the customer, credit note number and date.', variant: 'warning' });
+      await showAlert({ title: 'Missing fields', message: 'Please fill in the vendor, debit note number and date.', variant: 'warning' });
       return;
     }
     const cleaned = items.filter(i => i.itemId && i.qty > 0 && i.price >= 0).map(i => ({ ...i, taxRate: noGST ? 0 : i.taxRate }));
@@ -108,31 +106,31 @@ const CreditNotes = () => {
         taxAmount: tax,
         totalAmount: total
       };
-      if (editId) await addItem('creditNotes', { ...payload, id: editId });
-      else await addItem('creditNotes', payload);
+      if (editId) await addItem('debitNotes', { ...payload, id: editId });
+      else await addItem('debitNotes', payload);
       setView('list');
     } catch (e) { await showAlert({ title: 'Save failed', message: 'Save failed: ' + (e?.message || e), variant: 'danger' }); }
     setIsSaving(false);
   };
 
-  const handleEdit = (cn) => {
-    setEditId(cn.id);
-    setSelectedParty(parties.find(p => p.id === cn.partyId) || null);
-    setNoteDate(cn.date || '');
-    setNoteNumber(cn.noteNumber || '');
-    setItems(cn.items?.length ? cn.items.map(i => ({ ...i, total: i.qty * i.price * (1 + (i.taxRate || 0) / 100) })) : [{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, total: 0 }]);
-    setReason(cn.reason || '');
-    setNoGST(!!cn.noGST);
+  const handleEdit = (dn) => {
+    setEditId(dn.id);
+    setSelectedParty(parties.find(p => p.id === dn.partyId) || null);
+    setNoteDate(dn.date || '');
+    setNoteNumber(dn.noteNumber || '');
+    setItems(dn.items?.length ? dn.items.map(i => ({ ...i, total: i.qty * i.price * (1 + (i.taxRate || 0) / 100) })) : [{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, total: 0 }]);
+    setReason(dn.reason || '');
+    setNoGST(!!dn.noGST);
     setView('create');
   };
 
   const handleDelete = async (id) => {
-    const ok = await confirm({ title: 'Delete Credit Note', message: 'This credit note will be permanently deleted. This cannot be undone.', confirmLabel: 'Delete', variant: 'danger' });
-    if (ok) await deleteItem('creditNotes', id);
+    const ok = await confirm({ title: 'Delete Debit Note', message: 'This debit note will be permanently deleted. This cannot be undone.', confirmLabel: 'Delete', variant: 'danger' });
+    if (ok) await deleteItem('debitNotes', id);
   };
 
-  const doPrint = (cn) => {
-    setPrintingTx({ ...cn, invoiceNumber: cn.noteNumber, date: cn.date });
+  const doPrint = (dn) => {
+    setPrintingTx({ ...dn, invoiceNumber: dn.noteNumber, date: dn.date });
     setTimeout(() => handlePrint(), 100);
   };
 
@@ -142,14 +140,13 @@ const CreditNotes = () => {
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
-      {/* Hidden print ref */}
       <Box sx={{ position: 'absolute', left: -9999 }}>
-        <InvoiceTemplate ref={printRef} transaction={printingTx} business={currentBusiness} paperSize={paperSize} title="Credit Note" />
+        <InvoiceTemplate ref={printRef} transaction={printingTx} business={currentBusiness} paperSize={paperSize} title="Debit Note" />
       </Box>
 
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1rem' }}>Credit Notes</Typography>
-        <Button variant="contained" startIcon={<Plus size={18} />} onClick={() => setView(view === 'list' ? 'create' : 'list')}>{view === 'list' ? 'New Credit Note' : 'Back to List'}</Button>
+        <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1rem' }}>Debit Notes</Typography>
+        <Button variant="contained" startIcon={<Plus size={18} />} onClick={() => setView(view === 'list' ? 'create' : 'list')}>{view === 'list' ? 'New Debit Note' : 'Back to List'}</Button>
       </Box>
 
       {view === 'list' && (
@@ -157,23 +154,23 @@ const CreditNotes = () => {
           <CardContent>
             <TableContainer component={Paper} variant="outlined">
               <Table size="small">
-                <TableHead><TableRow><TableCell>Date</TableCell><TableCell>#</TableCell><TableCell>Customer</TableCell><TableCell align="right">Amount</TableCell><TableCell align="right">Actions</TableCell></TableRow></TableHead>
+                <TableHead><TableRow><TableCell>Date</TableCell><TableCell>#</TableCell><TableCell>Vendor</TableCell><TableCell align="right">Amount</TableCell><TableCell align="right">Actions</TableCell></TableRow></TableHead>
                 <TableBody>
-                  {creditNotes.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((cn) => (
-                    <TableRow key={cn.id}>
-                      <TableCell>{cn.date}</TableCell><TableCell>{cn.noteNumber}</TableCell><TableCell>{cn.partyName}</TableCell>
-                      <TableCell align="right">₹{cn.totalAmount?.toFixed(2)}</TableCell>
+                  {debitNotes.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((dn) => (
+                    <TableRow key={dn.id}>
+                      <TableCell>{dn.date}</TableCell><TableCell>{dn.noteNumber}</TableCell><TableCell>{dn.partyName}</TableCell>
+                      <TableCell align="right">₹{dn.totalAmount?.toFixed(2)}</TableCell>
                       <TableCell align="right">
-                        <IconButton size="small" title="Preview" onClick={() => { setPreviewRecord(cn); setPreviewOpen(true); }}><Eye size={16} /></IconButton>
-                        <IconButton size="small" onClick={() => handleEdit(cn)}><Edit2 size={16} /></IconButton>
-                        <IconButton size="small" color="error" onClick={() => handleDelete(cn.id)}><Trash2 size={16} /></IconButton>
+                        <IconButton size="small" title="Preview" onClick={() => { setPreviewRecord(dn); setPreviewOpen(true); }}><Eye size={16} /></IconButton>
+                        <IconButton size="small" onClick={() => handleEdit(dn)}><Edit2 size={16} /></IconButton>
+                        <IconButton size="small" color="error" onClick={() => handleDelete(dn.id)}><Trash2 size={16} /></IconButton>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </TableContainer>
-            <TablePagination rowsPerPageOptions={[10, 25, 50]} count={creditNotes.length} page={page} onPageChange={(_, p) => setPage(p)} rowsPerPage={rowsPerPage} onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }} />
+            <TablePagination rowsPerPageOptions={[10, 25, 50]} count={debitNotes.length} page={page} onPageChange={(_, p) => setPage(p)} rowsPerPage={rowsPerPage} onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }} />
           </CardContent>
         </Card>
       )}
@@ -183,9 +180,9 @@ const CreditNotes = () => {
           <CardContent>
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6} md={4}>
-                <Autocomplete size="small" options={parties} getOptionLabel={(o) => o.name || ''} value={selectedParty} onChange={(_, v) => setSelectedParty(v)} renderInput={(params) => <TextField {...params} label="Customer" />} />
+                <Autocomplete size="small" options={parties} getOptionLabel={(o) => o.name || ''} value={selectedParty} onChange={(_, v) => setSelectedParty(v)} renderInput={(params) => <TextField {...params} label="Vendor" />} />
               </Grid>
-              <Grid item xs={6} sm={3} md={2}><TextField fullWidth size="small" label="Credit Note #" value={noteNumber} onChange={(e) => setNoteNumber(e.target.value)} /></Grid>
+              <Grid item xs={6} sm={3} md={2}><TextField fullWidth size="small" label="Debit Note #" value={noteNumber} onChange={(e) => setNoteNumber(e.target.value)} /></Grid>
               <Grid item xs={6} sm={3} md={2}><TextField fullWidth size="small" type="date" label="Date" value={noteDate} onChange={(e) => setNoteDate(e.target.value)} InputLabelProps={{ shrink: true }} /></Grid>
               <Grid item xs={12}><TextField fullWidth size="small" label="Reason" value={reason} onChange={(e) => setReason(e.target.value)} /></Grid>
               <Grid item xs={12}>
@@ -207,24 +204,22 @@ const CreditNotes = () => {
               </Grid>
               <Grid item xs={12} sx={{ textAlign: 'right' }}>
                 <Typography>Subtotal: ₹{subtotal.toFixed(2)} | Tax: ₹{tax.toFixed(2)} | Total: ₹{total.toFixed(2)}</Typography>
-                <Box sx={{ mt: 2 }}><Button variant="outlined" sx={{ mr: 1 }} onClick={() => setView('list')}>Cancel</Button><Button variant="contained" onClick={handleSave} disabled={isSaving}>Save Credit Note</Button></Box>
+                <Box sx={{ mt: 2 }}><Button variant="outlined" sx={{ mr: 1 }} onClick={() => setView('list')}>Cancel</Button><Button variant="contained" onClick={handleSave} disabled={isSaving}>Save Debit Note</Button></Box>
               </Grid>
             </Grid>
           </CardContent>
         </Card>
       )}
 
-      {/* Preview dialog */}
       <Dialog open={previewOpen} onClose={() => setPreviewOpen(false)} maxWidth="md" fullWidth
         PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 32px 80px rgba(0,0,0,0.22)' } }}>
-        {/* Gradient header */}
-        <Box sx={{ background: 'linear-gradient(135deg, #4338ca 0%, #6366f1 100%)', px: 3, py: 2.5, display: 'flex', alignItems: 'flex-start', gap: 2, flexShrink: 0 }}>
+        <Box sx={{ background: 'linear-gradient(135deg, #7c2d12 0%, #c2410c 100%)', px: 3, py: 2.5, display: 'flex', alignItems: 'flex-start', gap: 2, flexShrink: 0 }}>
           <Box sx={{ p: 1, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', mt: 0.5, flexShrink: 0 }}>
             <Eye size={18} color="white" />
           </Box>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.72)', fontWeight: 700, fontSize: '0.65rem', letterSpacing: '0.1em', lineHeight: 1 }}>
-              Credit Note Preview
+              Debit Note Preview
             </Typography>
             <Typography variant="h6" sx={{ color: 'white', fontWeight: 800, mt: 0.5, fontSize: '1.05rem', fontFamily: 'monospace' }}>
               {previewRecord?.noteNumber || '—'}
@@ -247,7 +242,6 @@ const CreditNotes = () => {
             <X size={18} />
           </IconButton>
         </Box>
-        {/* Toolbar */}
         <Box sx={{ px: 2.5, py: 1.25, display: 'flex', alignItems: 'center', gap: 2, borderBottom: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.015)', flexShrink: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.secondary', fontSize: '0.8rem' }}>Page Size</Typography>
@@ -258,15 +252,14 @@ const CreditNotes = () => {
           <Box sx={{ flex: 1 }} />
           <Button startIcon={<Printer size={15} />} variant="contained" size="small" disableElevation
             onClick={() => { setPreviewOpen(false); doPrint(previewRecord); }}
-            sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 1.5, bgcolor: '#4338ca', '&:hover': { bgcolor: '#3730a3' } }}>
+            sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 1.5, bgcolor: '#c2410c', '&:hover': { bgcolor: '#9a3412' } }}>
             Print
           </Button>
         </Box>
-        {/* Scrollable preview */}
         <Box sx={{ flex: 1, overflow: 'auto', bgcolor: '#e8eaed', p: 3, display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
           <Box sx={{ filter: 'drop-shadow(0 8px 32px rgba(0,0,0,0.18))' }}>
             <div style={{ zoom: 0.72 }}>
-              <InvoiceTemplate transaction={previewTx} business={currentBusiness} paperSize={paperSize} title="Credit Note" />
+              <InvoiceTemplate transaction={previewTx} business={currentBusiness} paperSize={paperSize} title="Debit Note" />
             </div>
           </Box>
         </Box>
@@ -275,4 +268,4 @@ const CreditNotes = () => {
   );
 };
 
-export default CreditNotes;
+export default DebitNotes;

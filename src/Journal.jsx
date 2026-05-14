@@ -6,11 +6,15 @@ import {
 } from '@mui/material';
 import { Plus, Trash2, ChevronLeft } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
+import { useFinancialYear } from './FinancialYearContext';
 import { useData } from './DataContext';
+import { useDialog } from './DialogContext';
 
 const Journal = () => {
   const { currentBusiness } = useBusiness();
+  const { activeFY } = useFinancialYear();
   const { addItem, deleteItem, getItems } = useData();
+  const { confirm, showAlert } = useDialog();
   const [view, setView] = useState('list');
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
   const [reference, setReference] = useState('');
@@ -20,7 +24,7 @@ const Journal = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  const entries = getItems('journalEntries').filter(e => e.businessId === currentBusiness?.id).reverse();
+  const entries = getItems('journalEntries').filter(e => e.businessId === currentBusiness?.id).filter(r => !activeFY || !r.date || (r.date >= activeFY.start && r.date <= activeFY.end)).reverse();
 
   useEffect(() => {
     if (view === 'create' && !isSaving) {
@@ -48,16 +52,16 @@ const Journal = () => {
 
   const handleSave = async () => {
     if (!currentBusiness?.id) {
-      alert('Business not selected.');
+      await showAlert({ title: 'Business not selected', message: 'Please select a business before saving.', variant: 'warning' });
       return;
     }
     if (!balanced) {
-      alert('Debit and Credit must be equal.');
+      await showAlert({ title: 'Unbalanced entry', message: 'Debit and Credit totals must be equal before saving.', variant: 'warning' });
       return;
     }
     const validLines = lines.filter(l => (l.account && l.account.trim()) && ((Number(l.debit) || 0) > 0 || (Number(l.credit) || 0) > 0));
     if (!validLines.length) {
-      alert('Add at least one line with account and amount.');
+      await showAlert({ title: 'No lines added', message: 'Add at least one line with an account and amount.', variant: 'warning' });
       return;
     }
     setIsSaving(true);
@@ -78,13 +82,14 @@ const Journal = () => {
       });
       setView('list');
     } catch (e) {
-      alert('Save failed: ' + (e?.message || e));
+      await showAlert({ title: 'Save failed', message: 'Save failed: ' + (e?.message || e), variant: 'danger' });
     }
     setIsSaving(false);
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Delete this journal entry?')) await deleteItem('journalEntries', id);
+    const ok = await confirm({ title: 'Delete Journal Entry', message: 'This journal entry will be permanently deleted. This cannot be undone.', confirmLabel: 'Delete', variant: 'danger' });
+    if (ok) await deleteItem('journalEntries', id);
   };
 
   return (

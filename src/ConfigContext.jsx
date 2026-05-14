@@ -34,7 +34,8 @@ const defaultConfig = {
     primaryColor: '#1976d2',
     secondaryColor: '#dc004e'
   },
-  customSections: []
+  customSections: [],
+  defaultPaperSize: 'A4',
 };
 
 // Deep merge utility

@@ -5,8 +5,11 @@ import {
   TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, 
   InputAdornment, Chip, MenuItem, TablePagination, Snackbar, Alert, alpha
 } from '@mui/material';
-import { Plus, Search, Edit2, Trash2, DollarSign, Printer, Share2, Filter, Calendar, FileText } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, DollarSign, Printer, Share2, Filter, Calendar, FileText, Eye, X } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
+import { useFinancialYear } from './FinancialYearContext';
+import { useConfig } from './ConfigContext';
+import { useDialog } from './DialogContext';
 import { useData } from './DataContext';
 import { useReactToPrint } from 'react-to-print';
 import ExpenseTemplate from './ExpenseTemplate';
@@ -16,7 +19,9 @@ const EXPENSE_CATEGORIES = ['Office Supplies', 'Travel', 'Utilities', 'Rent', 'M
 
 const ExpensesPage = () => {
   const { currentBusiness } = useBusiness();
+  const { activeFY } = useFinancialYear();
   const { data, addItem, updateItem, deleteItem, getItems } = useData();
+  const { confirm } = useDialog();
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
@@ -42,8 +47,22 @@ const ExpensesPage = () => {
   // Pagination states
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const { config } = useConfig();
   const [printingData, setPrintingData] = useState(null);
-  const [paperSize, setPaperSize] = useState('A4');
+  const [paperSize, setPaperSize] = useState(() => {
+    const d = config.defaultPaperSize;
+    return ['A4', 'A5', 'Letter', 'Legal'].includes(d) ? d : 'A4';
+  });
+  const _psInit = useRef(!!config.defaultPaperSize);
+  useEffect(() => {
+    if (!_psInit.current && config.defaultPaperSize) {
+      const d = config.defaultPaperSize;
+      if (['A4', 'A5', 'Letter', 'Legal'].includes(d)) setPaperSize(d);
+      _psInit.current = true;
+    }
+  }, [config.defaultPaperSize]);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewRecord, setPreviewRecord] = useState(null);
   const printRef = useRef();
 
   const handlePrint = useReactToPrint({
@@ -67,6 +86,7 @@ const ExpensesPage = () => {
 
   const expenses = getItems('expenses')
     .filter(e => e.businessId === currentBusiness?.id)
+    .filter(r => !activeFY || !r.date || (r.date >= activeFY.start && r.date <= activeFY.end))
     .reverse();
 
   const filteredExpenses = expenses
@@ -197,10 +217,9 @@ const ExpensesPage = () => {
 
   const handleDelete = async (id) => {
     const expense = expenses.find(e => e.id === id);
-    if (expense && window.confirm(`Are you sure you want to delete this expense?`)) {
-      await deleteItem('expenses', id);
-      showSnackbar('Expense deleted successfully!', 'success');
-    }
+    if (!expense) return;
+    const ok = await confirm({ title: 'Delete Expense', message: 'This expense record will be permanently deleted. This cannot be undone.', confirmLabel: 'Delete', variant: 'danger' });
+    if (ok) { await deleteItem('expenses', id); showSnackbar('Expense deleted successfully!', 'success'); }
   };
 
   return (
@@ -214,19 +233,6 @@ const ExpensesPage = () => {
           <Typography variant="caption" color="text.secondary">Track and manage expenses</Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <TextField
-            select
-            size="small"
-            value={paperSize}
-            onChange={(e) => setPaperSize(e.target.value)}
-            sx={{ minWidth: 100 }}
-            SelectProps={{ displayEmpty: true }}
-          >
-            <MenuItem value="A4">A4</MenuItem>
-            <MenuItem value="A5">A5</MenuItem>
-            <MenuItem value="Letter">Letter</MenuItem>
-            <MenuItem value="Legal">Legal</MenuItem>
-          </TextField>
           <Button variant="contained" startIcon={<Plus size={16} />} onClick={() => handleOpen()}>
             Add Expense
           </Button>
@@ -421,11 +427,8 @@ const ExpensesPage = () => {
                       ₹{expense.amount.toFixed(2)}
                     </TableCell>
                     <TableCell align="right">
-                      <IconButton size="small" onClick={() => {
-                        setPrintingData(expense);
-                        setTimeout(() => handlePrint(), 100);
-                      }} color="primary" title="Print Voucher">
-                        <Printer size={16} />
+                      <IconButton size="small" onClick={() => { setPreviewRecord(expense); setPreviewOpen(true); }} color="primary" title="Preview Voucher">
+                        <Eye size={16} />
                       </IconButton>
                       <IconButton 
                         size="small" 
@@ -561,8 +564,8 @@ const ExpensesPage = () => {
         onClose={() => setSnackbar({ ...snackbar, open: false })}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert 
-          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
           variant="filled"
           sx={{ width: '100%' }}
@@ -570,6 +573,64 @@ const ExpensesPage = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Preview dialog */}
+      <Dialog open={previewOpen} onClose={() => setPreviewOpen(false)} maxWidth="md" fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 32px 80px rgba(0,0,0,0.22)' } }}>
+        {/* Gradient header */}
+        <Box sx={{ background: 'linear-gradient(135deg, #be185d 0%, #ec4899 100%)', px: 3, py: 2.5, display: 'flex', alignItems: 'flex-start', gap: 2, flexShrink: 0 }}>
+          <Box sx={{ p: 1, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', mt: 0.5, flexShrink: 0 }}>
+            <Eye size={18} color="white" />
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.72)', fontWeight: 700, fontSize: '0.65rem', letterSpacing: '0.1em', lineHeight: 1 }}>
+              Expense Preview
+            </Typography>
+            <Typography variant="h6" sx={{ color: 'white', fontWeight: 800, mt: 0.5, fontSize: '1.05rem' }}>
+              {previewRecord?.category || '—'}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2, mt: 0.75, flexWrap: 'wrap', alignItems: 'center' }}>
+              {previewRecord?.date && (
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600 }}>{previewRecord.date}</Typography>
+              )}
+              {previewRecord?.description && (
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600 }}>{previewRecord.description}</Typography>
+              )}
+              {previewRecord?.amount != null && (
+                <Box sx={{ px: 1.25, py: 0.25, bgcolor: 'rgba(255,255,255,0.18)', borderRadius: '100px', border: '1px solid rgba(255,255,255,0.25)' }}>
+                  <Typography variant="caption" sx={{ color: 'white', fontWeight: 800, fontSize: '0.8rem' }}>₹{previewRecord.amount.toFixed(2)}</Typography>
+                </Box>
+              )}
+            </Box>
+          </Box>
+          <IconButton onClick={() => setPreviewOpen(false)} size="small" sx={{ color: 'rgba(255,255,255,0.75)', mt: -0.5, '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.12)' } }}>
+            <X size={18} />
+          </IconButton>
+        </Box>
+        {/* Toolbar */}
+        <Box sx={{ px: 2.5, py: 1.25, display: 'flex', alignItems: 'center', gap: 2, borderBottom: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.015)', flexShrink: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.secondary', fontSize: '0.8rem' }}>Page Size</Typography>
+            <TextField select size="small" value={paperSize} onChange={(e) => setPaperSize(e.target.value)} sx={{ minWidth: 84, '& .MuiOutlinedInput-root': { borderRadius: 1 } }}>
+              {['A4', 'A5', 'Letter', 'Legal'].map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+            </TextField>
+          </Box>
+          <Box sx={{ flex: 1 }} />
+          <Button startIcon={<Printer size={15} />} variant="contained" size="small" disableElevation
+            onClick={() => { setPrintingData(previewRecord); setPreviewOpen(false); setTimeout(() => handlePrint(), 100); }}
+            sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 1.5, bgcolor: '#be185d', '&:hover': { bgcolor: '#9d174d' } }}>
+            Print
+          </Button>
+        </Box>
+        {/* Scrollable preview */}
+        <Box sx={{ flex: 1, overflow: 'auto', bgcolor: '#e8eaed', p: 3, display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+          <Box sx={{ filter: 'drop-shadow(0 8px 32px rgba(0,0,0,0.18))' }}>
+            <div style={{ zoom: 0.72 }}>
+              <ExpenseTemplate data={previewRecord} business={currentBusiness} paperSize={paperSize} />
+            </div>
+          </Box>
+        </Box>
+      </Dialog>
     </Box>
   );
 };

@@ -3,16 +3,18 @@ import {
   Box, Button, Card, CardContent, Typography, TextField, Dialog,
   DialogTitle, DialogContent, DialogActions, Grid, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Paper, IconButton,
-  Tabs, Tab, Chip, InputAdornment, MenuItem, Autocomplete, TablePagination,
-  Snackbar, Alert
+  Chip, InputAdornment, MenuItem, Autocomplete, TablePagination,
+  Snackbar, Alert, Avatar, Tooltip, alpha, useTheme
 } from '@mui/material';
-import { Plus, Search, Edit2, Trash2, Users } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Users, TrendingUp, TrendingDown, UserCheck, Store } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
 import { useData } from './DataContext';
+import { useDialog } from './DialogContext';
 
 const PartiesPage = () => {
   const { currentBusiness } = useBusiness();
   const { data, addItem, updateItem, deleteItem, getItems } = useData();
+  const { confirm } = useDialog();
   const [tab, setTab] = useState(0);
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
@@ -36,7 +38,12 @@ const PartiesPage = () => {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'error' });
 
+  const theme = useTheme();
   const parties = getItems('parties').filter(p => p.businessId === currentBusiness?.id);
+  const customers = parties.filter(p => p.type === 'Customer');
+  const vendors = parties.filter(p => p.type === 'Vendor');
+  const totalReceivable = customers.reduce((s, p) => s + Math.max(0, p.balance || 0), 0);
+  const totalPayable = vendors.reduce((s, p) => s + Math.max(0, -(p.balance || 0)), 0);
 
   // Similar name suggestions while typing party name
   const similarParties = useMemo(() => {
@@ -162,29 +169,75 @@ const PartiesPage = () => {
 
   const handleDelete = async (id) => {
     const party = parties.find(p => p.id === id);
-    if (party && window.confirm(`Are you sure you want to delete "${party.name}"?`)) {
-      await deleteItem('parties', id);
-      showSnackbar('Party deleted successfully!', 'success');
-    }
+    if (!party) return;
+    const ok = await confirm({ title: `Delete "${party.name}"`, message: 'This party will be permanently deleted. All associated balance data will be lost.', confirmLabel: 'Delete', variant: 'danger' });
+    if (ok) { await deleteItem('parties', id); showSnackbar('Party deleted successfully!', 'success'); }
   };
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
-        <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>Parties</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>Manage customers and vendors</Typography>
+      {/* Hero Header */}
+      <Box sx={{
+        borderRadius: 3,
+        background: 'linear-gradient(135deg, #1e1b4b 0%, #3730a3 55%, #1e40af 100%)',
+        p: { xs: 2.5, md: 3.5 }, mb: 3,
+        position: 'relative', overflow: 'hidden',
+      }}>
+        <Box sx={{ position: 'absolute', top: -40, right: -40, width: 200, height: 200, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
+        <Box sx={{ position: 'absolute', bottom: -30, right: 100, width: 150, height: 150, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.03)', pointerEvents: 'none' }} />
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2.5, position: 'relative' }}>
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
+              <Box sx={{ p: 1, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.15)', display: 'flex' }}>
+                <Users size={20} color="white" />
+              </Box>
+              <Typography variant="h5" sx={{ fontWeight: 800, color: 'white', letterSpacing: '-0.01em' }}>Parties</Typography>
+            </Box>
+            <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.65)', pl: 0.5 }}>Manage your customers and vendors</Typography>
+          </Box>
+          <Button variant="contained" startIcon={<Plus size={16} />} onClick={() => handleOpen()}
+            sx={{ bgcolor: 'white', color: '#3730a3', fontWeight: 700, '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' }, borderRadius: 2, textTransform: 'none', flexShrink: 0 }}>
+            Add Party
+          </Button>
         </Box>
-        <Button variant="contained" startIcon={<Plus size={16} />} onClick={() => handleOpen()}>
-          Add Party
-        </Button>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(4, 1fr)' }, gap: 1.5, position: 'relative' }}>
+          {[
+            { label: 'Customers', value: customers.length, icon: UserCheck, color: '#a5b4fc' },
+            { label: 'Vendors', value: vendors.length, icon: Store, color: '#93c5fd' },
+            { label: 'Receivable', value: `₹${totalReceivable.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, icon: TrendingUp, color: '#6ee7b7' },
+            { label: 'Payable', value: `₹${totalPayable.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, icon: TrendingDown, color: '#fca5a5' },
+          ].map(({ label, value, icon: Icon, color }) => (
+            <Box key={label} sx={{ bgcolor: 'rgba(255,255,255,0.08)', borderRadius: 2, p: 1.5, border: '1px solid rgba(255,255,255,0.1)' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.5 }}>
+                <Icon size={14} color={color} />
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</Typography>
+              </Box>
+              <Typography sx={{ color: 'white', fontWeight: 800, lineHeight: 1.1, fontSize: { xs: '0.95rem', sm: '1.1rem' } }}>{value}</Typography>
+            </Box>
+          ))}
+        </Box>
       </Box>
 
-      <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-        <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}>
-          <Tabs value={tab} onChange={(e, v) => setTab(v)} sx={{ minHeight: 40 }}><Tab label="Customers" /><Tab label="Vendors" /></Tabs>
+      <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+        <Box sx={{ px: 2, pt: 2, pb: 0 }}>
+          <Box sx={{ display: 'inline-flex', gap: 0, bgcolor: alpha(theme.palette.primary.main, 0.06), borderRadius: 2.5, p: 0.5, border: '1px solid', borderColor: 'divider', mb: 2 }}>
+            {[{ label: `Customers (${customers.length})`, value: 0 }, { label: `Vendors (${vendors.length})`, value: 1 }].map((t) => (
+              <Box key={t.value} onClick={() => setTab(t.value)} sx={{
+                px: 2.5, py: 0.75, borderRadius: 2, cursor: 'pointer',
+                bgcolor: tab === t.value ? 'background.paper' : 'transparent',
+                boxShadow: tab === t.value ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+                color: tab === t.value ? 'primary.main' : 'text.secondary',
+                fontWeight: tab === t.value ? 700 : 500,
+                fontSize: '0.875rem',
+                transition: 'all 0.15s',
+                userSelect: 'none',
+              }}>
+                {t.label}
+              </Box>
+            ))}
+          </Box>
         </Box>
-        <CardContent sx={{ pt: 2, pb: 2 }}>
+        <CardContent sx={{ pt: 0, pb: 2 }}>
           <TextField
             fullWidth
             size="small"
@@ -199,30 +252,32 @@ const PartiesPage = () => {
             sx={{ mb: 2 }}
           />
 
-          <Box sx={{ mb: 2 }}>
-            <Button 
+          <Box sx={{ display: 'flex', gap: 1, mb: 2, alignItems: 'center' }}>
+            <Button
               onClick={() => setShowFilters(!showFilters)}
-              variant="outlined"
+              variant={showFilters ? 'contained' : 'outlined'}
               size="small"
-              sx={{ mr: 2 }}
+              startIcon={<Search size={14} />}
+              sx={{ fontWeight: 600, textTransform: 'none', borderRadius: 1.5 }}
             >
-              {showFilters ? 'Hide Filters' : 'Show Filters'}
+              {showFilters ? 'Hide Filters' : 'Filters'}
             </Button>
             {(filters.balanceMin || filters.balanceMax || filters.hasGST !== 'all' || filters.sortBy !== 'name' || filters.sortOrder !== 'asc') && (
-              <Button 
+              <Button
                 onClick={() => setFilters({ balanceMin: '', balanceMax: '', hasGST: 'all', sortBy: 'name', sortOrder: 'asc' })}
                 variant="text"
                 size="small"
                 color="error"
+                sx={{ fontWeight: 600, textTransform: 'none' }}
               >
-                Clear Filters
+                Clear all
               </Button>
             )}
           </Box>
           
           {showFilters && (
             <Grid container spacing={2} sx={{ mb: 2 }}>
-              <Grid item xs={12} sm={6} md={3}>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                 <TextField
                   fullWidth
                   label="Min Balance"
@@ -233,7 +288,7 @@ const PartiesPage = () => {
                   size="small"
                 />
               </Grid>
-              <Grid item xs={12} sm={6} md={3}>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                 <TextField
                   fullWidth
                   label="Max Balance"
@@ -244,7 +299,7 @@ const PartiesPage = () => {
                   size="small"
                 />
               </Grid>
-              <Grid item xs={12} sm={6} md={3}>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                 <TextField
                   select
                   fullWidth
@@ -258,7 +313,7 @@ const PartiesPage = () => {
                   <MenuItem value="no">No GST</MenuItem>
                 </TextField>
               </Grid>
-              <Grid item xs={12} sm={6} md={3}>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                 <TextField
                   select
                   fullWidth
@@ -272,7 +327,7 @@ const PartiesPage = () => {
                   <MenuItem value="phone">Phone</MenuItem>
                 </TextField>
               </Grid>
-              <Grid item xs={12} sm={6} md={3}>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                 <TextField
                   select
                   fullWidth
@@ -305,17 +360,28 @@ const PartiesPage = () => {
                   .map((party) => (
                   <TableRow key={party.id} hover>
                     <TableCell>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>{party.name}</Typography>
-                      <Typography variant="caption" color="text.secondary">{party.address}</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <Avatar sx={{ width: 34, height: 34, bgcolor: tab === 0 ? alpha('#4f46e5', 0.1) : alpha('#0ea5e9', 0.1), color: tab === 0 ? '#4f46e5' : '#0ea5e9', fontSize: '0.8rem', fontWeight: 800 }}>
+                          {party.name.charAt(0).toUpperCase()}
+                        </Avatar>
+                        <Box>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>{party.name}</Typography>
+                          {party.address && <Typography variant="caption" color="text.secondary">{party.address}</Typography>}
+                        </Box>
+                      </Box>
                     </TableCell>
                     <TableCell>{party.phone}</TableCell>
                     <TableCell>{party.gstNumber || 'N/A'}</TableCell>
                     <TableCell align="right">
-                      <Chip 
-                        label={`₹${Math.abs(party.balance).toFixed(2)}`} 
+                      <Chip
+                        label={`${party.balance >= 0 ? '▲' : '▼'} ₹${Math.abs(party.balance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
                         size="small"
-                        color={party.balance >= 0 ? 'success' : 'error'}
-                        variant="outlined"
+                        sx={{
+                          fontWeight: 700, fontSize: '0.72rem',
+                          bgcolor: party.balance >= 0 ? alpha('#10b981', 0.1) : alpha('#ef4444', 0.1),
+                          color: party.balance >= 0 ? '#059669' : '#dc2626',
+                          border: `1px solid ${party.balance >= 0 ? alpha('#10b981', 0.25) : alpha('#ef4444', 0.25)}`,
+                        }}
                       />
                     </TableCell>
                     <TableCell align="right">
@@ -331,9 +397,12 @@ const PartiesPage = () => {
                 {filteredParties.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
-                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, opacity: 0.5 }}>
-                        <Users size={32} strokeWidth={1.5} />
-                        <Typography variant="body2" sx={{ fontWeight: 500 }}>No parties found</Typography>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
+                        <Box sx={{ p: 2, borderRadius: '50%', bgcolor: alpha(theme.palette.primary.main, 0.07) }}>
+                          <Users size={28} color={theme.palette.primary.main} strokeWidth={1.5} />
+                        </Box>
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.secondary' }}>No parties found</Typography>
+                        <Typography variant="caption" color="text.disabled">Try adjusting your search or filters</Typography>
                       </Box>
                     </TableCell>
                   </TableRow>
@@ -363,7 +432,7 @@ const PartiesPage = () => {
           <DialogTitle>{editingParty ? 'Edit Party' : 'Add New Party'}</DialogTitle>
           <DialogContent dividers>
             <Grid container spacing={2} sx={{ mt: 0 }}>
-              <Grid item xs={12}>
+              <Grid size={{ xs: 12 }}>
                 <TextField
                   fullWidth
                   label="Party Name"
@@ -397,7 +466,7 @@ const PartiesPage = () => {
                   </Alert>
                 )}
               </Grid>
-              <Grid item xs={6}>
+              <Grid size={{ xs: 6 }}>
                 <TextField
                   fullWidth
                   label="Phone Number"
@@ -405,7 +474,7 @@ const PartiesPage = () => {
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 />
               </Grid>
-              <Grid item xs={6}>
+              <Grid size={{ xs: 6 }}>
                 <TextField
                   fullWidth
                   label="GSTIN (Optional)"
@@ -413,7 +482,7 @@ const PartiesPage = () => {
                   onChange={(e) => setFormData({ ...formData, gstNumber: e.target.value })}
                 />
               </Grid>
-              <Grid item xs={12}>
+              <Grid size={{ xs: 12 }}>
                 <TextField
                   fullWidth
                   label="Address"
@@ -423,7 +492,7 @@ const PartiesPage = () => {
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                 />
               </Grid>
-              <Grid item xs={12}>
+              <Grid size={{ xs: 12 }}>
                 <TextField
                   fullWidth
                   type="number"

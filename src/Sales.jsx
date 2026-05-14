@@ -33,10 +33,12 @@ import {
   List,
   ListItem,
   ListItemText,
+  ListItemIcon,
   Checkbox,
   Snackbar,
   Alert,
   Tooltip,
+  Menu,
   useTheme,
 } from "@mui/material";
 import {
@@ -63,14 +65,20 @@ import {
   X,
   ChevronDown,
   ArrowUpRight,
+  Eye,
+  FileDown,
+  ImageDown,
+  Minus,
 } from "lucide-react";
 import { useBusiness } from "./BusinessContext";
+import { useFinancialYear } from './FinancialYearContext';
 import { useData } from "./DataContext";
 import { useConfig } from "./ConfigContext";
 import { useReactToPrint } from "react-to-print";
 import { useLocation } from "react-router-dom";
 import InvoiceTemplate from "./InvoiceTemplate";
 import BarcodeScanner from "./BarcodeScanner";
+import { useDialog } from "./DialogContext";
 
 /* ─── Design tokens (derived from global MUI theme) ─── */
 const getThemeTokens = (theme) => {
@@ -225,8 +233,10 @@ const GradientButton = ({
 const SalesPage = ({ mode = "sales" }) => {
   const theme = useTheme();
   const tokens = React.useMemo(() => getThemeTokens(theme), [theme]);
+  const { confirm, showAlert } = useDialog();
   const isSale = mode === "sales";
   const { currentBusiness } = useBusiness();
+  const { activeFY } = useFinancialYear();
   const { data, addItem, updateItem, deleteItem, getItems } = useData();
   const { config } = useConfig();
   const location = useLocation();
@@ -255,9 +265,20 @@ const SalesPage = ({ mode = "sales" }) => {
   const [discountPercent, setDiscountPercent] = useState(0);
   const [printingTx, setPrintingTx] = useState(null);
   const [printTrigger, setPrintTrigger] = useState(0);
-  const [paperSize, setPaperSize] = useState("A4");
+  const [paperSize, setPaperSize] = useState(() => config.defaultPaperSize || 'A4');
+  const _paperSizeInit = React.useRef(!!config.defaultPaperSize);
+  React.useEffect(() => {
+    if (!_paperSizeInit.current && config.defaultPaperSize) {
+      setPaperSize(config.defaultPaperSize);
+      _paperSizeInit.current = true;
+    }
+  }, [config.defaultPaperSize]);
   const printRef = useRef();
+  const pdfRef = useRef();
   const bulkPrintRef = useRef();
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [shareMenuAnchor, setShareMenuAnchor] = useState(null);
+  const [shareLoading, setShareLoading] = useState(false);
 
   const [bulkPrintOpen, setBulkPrintOpen] = useState(false);
   const [bulkPrintDateFrom, setBulkPrintDateFrom] = useState(() => {
@@ -313,6 +334,9 @@ const SalesPage = ({ mode = "sales" }) => {
   const quickAddItemCallbackRef = useRef(null);
   const savingRef = useRef(false);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewTx, setPreviewTx] = useState(null);
+  const [roundOff, setRoundOff] = useState(0); // 0=off, +1/+2/+3=round-up to 1/10/100, -1/-2/-3=round-down
 
   const [filters, setFilters] = useState({
     dateFrom: "",
@@ -475,6 +499,7 @@ const SalesPage = ({ mode = "sales" }) => {
   const tableName = isSale ? "sales" : "purchases";
   const transactions = getItems(tableName)
     .filter((tx) => tx.businessId === currentBusiness?.id)
+    .filter((r) => !activeFY || !r.date || (r.date >= activeFY.start && r.date <= activeFY.end))
     .filter((tx) => {
       if (filters.search) {
         const s = filters.search.toLowerCase();
@@ -503,6 +528,12 @@ const SalesPage = ({ mode = "sales" }) => {
     (s, t) => s + (t.totalAmount || 0),
     0,
   );
+
+  const today = new Date();
+  const thisMonthTotal = transactions
+    .filter(t => { const d = new Date(t.date + 'T12:00:00'); return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth(); })
+    .reduce((s, t) => s + (t.totalAmount || 0), 0);
+  const overdueCount = transactions.filter(t => t.dueDate && new Date(t.dueDate + 'T00:00:00') < today).length;
 
   const bulkPrintQueue = React.useMemo(() => {
     if (!isSale || !currentBusiness?.id) return [];
@@ -651,6 +682,7 @@ const SalesPage = ({ mode = "sales" }) => {
       setAdvance("");
       setDueDate("");
       setTaxMode("inclusive");
+      setRoundOff(0);
       setEditId(null);
     }
   }, [view, isSale, isSaving]); // eslint-disable-line
@@ -777,6 +809,37 @@ const SalesPage = ({ mode = "sales" }) => {
   };
   const calculateTotal = () =>
     calculateSubtotal() - calculateDiscountAmount() + calculateTax();
+  // Build progressive round-up sequence from a value, skipping steps that don't change it
+  const getRoundUpSeq = (val) => {
+    const seq = [];
+    let cur = val;
+    for (const s of [1, 10, 100, 1000, 10000]) {
+      const r = Math.ceil(cur / s) * s;
+      if (r > cur) { seq.push(r); cur = r; if (seq.length >= 3) break; }
+    }
+    return seq;
+  };
+  // Build progressive round-down sequence from a value, skipping steps that don't change it
+  const getRoundDownSeq = (val) => {
+    const seq = [];
+    let cur = val;
+    for (const s of [1, 10, 100, 1000, 10000]) {
+      const r = Math.floor(cur / s) * s;
+      if (r < cur) { seq.push(r); cur = r; if (seq.length >= 3) break; }
+    }
+    return seq;
+  };
+  const calculateRoundOff = () => {
+    if (roundOff === 0) return 0;
+    const total = calculateTotal();
+    if (roundOff > 0) {
+      const target = getRoundUpSeq(total)[roundOff - 1];
+      return target != null ? target - total : 0;
+    }
+    const target = getRoundDownSeq(total)[Math.abs(roundOff) - 1];
+    return target != null ? target - total : 0;
+  };
+  const calculateFinalTotal = () => calculateTotal() + calculateRoundOff();
 
   const handleSave = async (options = {}) => {
     const { saveAndCreateNew = false } = options;
@@ -799,25 +862,19 @@ const SalesPage = ({ mode = "sales" }) => {
       const currentDueDate = dueDate;
       const currentTaxMode = taxMode;
       if (!currentBusinessId) {
-        alert("Business not selected.");
-        savingRef.current = false;
-        setIsSaving(false);
-        return;
-      }
-      if (!currentSelectedParty?.id) {
-        alert("Please select a party");
+        await showAlert({ title: "Business not selected", message: "Please select a business before saving.", variant: "warning" });
         savingRef.current = false;
         setIsSaving(false);
         return;
       }
       if (!currentInvoiceNumber?.trim()) {
-        alert("Please enter an invoice/bill number");
+        await showAlert({ title: "Invoice number required", message: "Please enter an invoice / bill number.", variant: "warning" });
         savingRef.current = false;
         setIsSaving(false);
         return;
       }
       if (!currentInvoiceDate) {
-        alert("Please select a date");
+        await showAlert({ title: "Date required", message: "Please select a date for this invoice.", variant: "warning" });
         savingRef.current = false;
         setIsSaving(false);
         return;
@@ -848,21 +905,34 @@ const SalesPage = ({ mode = "sales" }) => {
           }, 0);
       const finalTotalAmount =
         finalSubtotal - finalDiscountAmount + finalTaxAmount;
+      const finalRoundOffAmount = (() => {
+        if (roundOff === 0) return 0;
+        const buildUpSeq = (val) => { const seq = []; let c = val; for (const s of [1,10,100,1000,10000]) { const r = Math.ceil(c/s)*s; if (r>c){seq.push(r);c=r;if(seq.length>=3)break;} } return seq; };
+        const buildDnSeq = (val) => { const seq = []; let c = val; for (const s of [1,10,100,1000,10000]) { const r = Math.floor(c/s)*s; if (r<c){seq.push(r);c=r;if(seq.length>=3)break;} } return seq; };
+        if (roundOff > 0) { const t = buildUpSeq(finalTotalAmount)[roundOff-1]; return t != null ? t - finalTotalAmount : 0; }
+        const t = buildDnSeq(finalTotalAmount)[Math.abs(roundOff)-1]; return t != null ? t - finalTotalAmount : 0;
+      })();
+      const finalGrandTotal = finalTotalAmount + finalRoundOffAmount;
       const cleanedItems = currentItems
-        .filter((i) => i.itemId && Number(i.qty) > 0 && Number(i.price) >= 0)
+        .filter(
+          (i) =>
+            (i.itemId || i.name?.trim()) &&
+            Number(i.qty) > 0 &&
+            Number(i.price) >= 0,
+        )
         .map((item) => ({
           ...item,
           taxRate: currentNoGST ? 0 : item.taxRate,
           discountPercent: item.discountPercent ?? 0,
         }));
       if (!cleanedItems.length) {
-        alert("Please add at least one item with valid quantity and price");
+        await showAlert({ title: "No items added", message: "Please add at least one item with a valid quantity and price.", variant: "warning" });
         savingRef.current = false;
         setIsSaving(false);
         return;
       }
       if (finalTotalAmount <= 0) {
-        alert("Total amount must be greater than zero");
+        await showAlert({ title: "Invalid total", message: "The total amount must be greater than zero.", variant: "warning" });
         savingRef.current = false;
         setIsSaving(false);
         return;
@@ -870,8 +940,10 @@ const SalesPage = ({ mode = "sales" }) => {
 
       const transactionData = {
         businessId: currentBusinessId,
-        partyId: currentSelectedParty.id,
-        partyName: currentSelectedParty.name || "Unknown",
+        partyId: currentSelectedParty?.id || "",
+        partyName:
+          currentSelectedParty?.name ||
+          (currentIsSale ? "Cash & Carry" : "Cash Purchase"),
         type: currentIsSale ? "Sales" : "Purchases",
         date: currentInvoiceDate,
         invoiceNumber: currentInvoiceNumber.trim(),
@@ -882,7 +954,8 @@ const SalesPage = ({ mode = "sales" }) => {
         discountAmount: finalDiscountAmount,
         subtotal: finalSubtotal,
         taxAmount: finalTaxAmount,
-        totalAmount: finalTotalAmount,
+        roundOffAmount: finalRoundOffAmount || 0,
+        totalAmount: finalGrandTotal,
         advance: currentAdvance,
         dueDate: currentDueDate || "",
         taxMode: currentTaxMode,
@@ -936,7 +1009,7 @@ const SalesPage = ({ mode = "sales" }) => {
             t.partyId === transactionData.partyId,
         );
         if (!savedItem) {
-          alert("Failed to save transaction.");
+          await showAlert({ title: "Save failed", message: "Failed to save transaction. Please try again.", variant: "danger" });
           savingRef.current = false;
           setIsSaving(false);
           return;
@@ -946,9 +1019,9 @@ const SalesPage = ({ mode = "sales" }) => {
       const balanceChange = currentIsSale
         ? transactionData.totalAmount
         : -transactionData.totalAmount;
-      const newParty = currentParties.find(
-        (p) => p.id === currentSelectedParty.id,
-      );
+      const newParty = currentSelectedParty?.id
+        ? currentParties.find((p) => p.id === currentSelectedParty.id)
+        : null;
       if (newParty) {
         const isEditSameParty =
           currentEditId &&
@@ -966,7 +1039,7 @@ const SalesPage = ({ mode = "sales" }) => {
         });
       }
 
-      if (currentIsSale && !currentEditId && currentAdvance > 0) {
+      if (currentIsSale && !currentEditId && currentAdvance > 0 && currentSelectedParty?.id) {
         await addItem("payments", {
           businessId: currentBusinessId,
           partyId: currentSelectedParty.id,
@@ -1012,6 +1085,7 @@ const SalesPage = ({ mode = "sales" }) => {
         setAdvance("");
         setDueDate("");
         setTaxMode("inclusive");
+        setRoundOff(0);
         setEditId(null);
         setView("create");
       } else {
@@ -1021,7 +1095,7 @@ const SalesPage = ({ mode = "sales" }) => {
       }
     } catch (error) {
       console.error("Error saving transaction:", error);
-      alert("An error occurred while saving. Please try again.");
+      await showAlert({ title: "Save error", message: "An error occurred while saving. Please try again.", variant: "danger" });
     } finally {
       savingRef.current = false;
       setIsSaving(false);
@@ -1029,12 +1103,13 @@ const SalesPage = ({ mode = "sales" }) => {
   };
 
   const handleDelete = async (tx) => {
-    if (
-      !window.confirm(
-        `Are you sure you want to delete this ${isSale ? "invoice" : "bill"}?`,
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: `Delete ${isSale ? "Invoice" : "Bill"}`,
+      message: `Invoice #${tx.invoiceNumber} will be permanently deleted and stock / balance will be reversed. This cannot be undone.`,
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       const party = getItems("parties").find((p) => p.id === tx.partyId);
       if (party)
@@ -1053,17 +1128,15 @@ const SalesPage = ({ mode = "sales" }) => {
       deleteItem(isSale ? "sales" : "purchases", tx.id);
     } catch (error) {
       console.error("Delete failed:", error);
-      alert("Error deleting record: " + error.message);
+      await showAlert({ title: "Delete failed", message: "Error deleting record: " + error.message, variant: "danger" });
     }
   };
 
   const startEdit = (tx) => {
     setEditId(tx.id);
     setSelectedParty(
-      parties.find((p) => p.id === tx.partyId) || {
-        id: tx.partyId,
-        name: tx.partyName,
-      },
+      parties.find((p) => p.id === tx.partyId) ||
+        (tx.partyId ? { id: tx.partyId, name: tx.partyName } : null),
     );
     setInvoiceDate(tx.date);
     setInvoiceNumber(tx.invoiceNumber);
@@ -1097,6 +1170,102 @@ const SalesPage = ({ mode = "sales" }) => {
         .catch((e) => console.error(e));
     else
       window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+  };
+
+  const downloadInvoicePDF = async () => {
+    if (!pdfRef.current || !previewTx) return;
+    setPdfLoading(true);
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ]);
+      const el = pdfRef.current;
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const imgData = canvas.toDataURL('image/png');
+      const isNarrow = paperSize === 'Thermal 80mm' || paperSize === 'Thermal 58mm';
+      let pdfWidthMm, pdfHeightMm;
+      if (paperSize === 'Thermal 58mm') { pdfWidthMm = 58; }
+      else if (paperSize === 'Thermal 80mm') { pdfWidthMm = 80; }
+      else if (paperSize === 'A5') { pdfWidthMm = 148; }
+      else if (paperSize === 'Letter') { pdfWidthMm = 216; }
+      else if (paperSize === 'Legal') { pdfWidthMm = 216; }
+      else { pdfWidthMm = 210; }
+      pdfHeightMm = (canvas.height * pdfWidthMm) / canvas.width;
+      const pdf = new jsPDF({
+        orientation: isNarrow ? 'portrait' : 'portrait',
+        unit: 'mm',
+        format: isNarrow ? [pdfWidthMm, pdfHeightMm] : (paperSize === 'A5' ? 'a5' : paperSize === 'Legal' ? 'legal' : paperSize === 'Letter' ? 'letter' : 'a4'),
+      });
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidthMm, pdfHeightMm);
+      pdf.save(`${previewTx.invoiceNumber || 'invoice'}.pdf`);
+    } catch (err) {
+      console.error('PDF generation failed', err);
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
+  const captureInvoiceCanvas = async () => {
+    const { default: html2canvas } = await import('html2canvas');
+    return html2canvas(pdfRef.current, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+  };
+
+  const shareAsPDF = async () => {
+    if (!pdfRef.current || !previewTx) return;
+    setShareLoading(true);
+    try {
+      const [canvas, { jsPDF }] = await Promise.all([
+        captureInvoiceCanvas(),
+        import('jspdf').then(m => ({ jsPDF: m.jsPDF })),
+      ]);
+      const imgData = canvas.toDataURL('image/png');
+      const isNarrow = paperSize === 'Thermal 80mm' || paperSize === 'Thermal 58mm';
+      let pdfWidthMm = paperSize === 'Thermal 58mm' ? 58 : paperSize === 'Thermal 80mm' ? 80 : paperSize === 'A5' ? 148 : 210;
+      const pdfHeightMm = (canvas.height * pdfWidthMm) / canvas.width;
+      const pdf = new jsPDF({
+        unit: 'mm',
+        format: isNarrow ? [pdfWidthMm, pdfHeightMm] : (paperSize === 'A5' ? 'a5' : paperSize === 'Legal' ? 'legal' : paperSize === 'Letter' ? 'letter' : 'a4'),
+      });
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidthMm, pdfHeightMm);
+      const fileName = `${previewTx.invoiceNumber || 'invoice'}.pdf`;
+      const pdfBlob = pdf.output('blob');
+      const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: fileName });
+      } else {
+        const url = URL.createObjectURL(pdfBlob);
+        const a = document.createElement('a'); a.href = url; a.download = fileName;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) { console.error('Share as PDF failed', err); }
+    finally { setShareLoading(false); }
+  };
+
+  const shareAsImage = async () => {
+    if (!pdfRef.current || !previewTx) return;
+    setShareLoading(true);
+    try {
+      const canvas = await captureInvoiceCanvas();
+      await new Promise((resolve, reject) => {
+        canvas.toBlob(async (blob) => {
+          if (!blob) { reject(new Error('No blob')); return; }
+          const fileName = `${previewTx.invoiceNumber || 'invoice'}.png`;
+          const file = new File([blob], fileName, { type: 'image/png' });
+          if (navigator.canShare?.({ files: [file] })) {
+            await navigator.share({ files: [file], title: fileName });
+          } else {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = fileName;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }
+          resolve();
+        }, 'image/png');
+      });
+    } catch (err) { console.error('Share as Image failed', err); }
+    finally { setShareLoading(false); }
   };
 
   const addPfCustomer = () =>
@@ -1141,21 +1310,26 @@ const SalesPage = ({ mode = "sales" }) => {
 
   const handlePfSave = async () => {
     if (!currentBusiness?.id) {
-      alert("Business not selected.");
+      await showAlert({ title: "Business not selected", message: "Please select a business before saving.", variant: "warning" });
       return;
     }
     if (!pfProduct) {
-      alert("Please select a product first.");
+      await showAlert({ title: "No product selected", message: "Please select a product before saving.", variant: "warning" });
       return;
     }
     const validRows = pfCustomers.filter((r) => r.party && Number(r.qty) > 0);
     if (!validRows.length) {
-      alert("Please add at least one customer with a quantity.");
+      await showAlert({ title: "No customers added", message: "Please add at least one customer with a quantity.", variant: "warning" });
       return;
     }
     setPfIsSaving(true);
     try {
-      const baseTime = Date.now();
+      // Generate sequential invoice numbers following the same INVSB pattern
+      const firstInvNum = generateInvoiceNumber(pfDate, true);
+      const dashIdx = firstInvNum.lastIndexOf("-");
+      const invPrefix = firstInvNum.slice(0, dashIdx + 1);
+      const firstSerial = parseInt(firstInvNum.slice(dashIdx + 1), 10);
+
       const rowData = validRows.map((row, idx) => {
         const qty = Number(row.qty);
         const price = Number(row.price) || 0;
@@ -1173,7 +1347,7 @@ const SalesPage = ({ mode = "sales" }) => {
           subtotal,
           taxAmount,
           totalAmount,
-          invoiceNumber: `INV-${String(baseTime + idx).slice(-8)}`,
+          invoiceNumber: `${invPrefix}${String(firstSerial + idx).padStart(4, "0")}`,
         };
       });
       const balanceDelta = {};
@@ -1245,7 +1419,7 @@ const SalesPage = ({ mode = "sales" }) => {
       setView("list");
     } catch (err) {
       console.error("Product-first save error:", err);
-      alert("Error saving invoices: " + err.message);
+      await showAlert({ title: "Save error", message: "Error saving invoices: " + err.message, variant: "danger" });
     } finally {
       setPfIsSaving(false);
     }
@@ -1609,256 +1783,211 @@ const SalesPage = ({ mode = "sales" }) => {
       const pfValidCount = pfCustomers.filter(
         (r) => r.party && Number(r.qty) > 0,
       ).length;
+
+      const StepCircle = ({ n, active }) => (
+        <Box
+          sx={{
+            width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: active
+              ? `linear-gradient(135deg, ${tokens.primaryDark}, ${tokens.primaryLight})`
+              : "rgba(0,0,0,0.12)",
+            boxShadow: active ? `0 2px 8px ${alpha(tokens.primary, 0.32)}` : "none",
+          }}
+        >
+          <Typography sx={{ fontSize: "0.72rem", fontWeight: 900, color: active ? "white" : "text.disabled", lineHeight: 1 }}>
+            {n}
+          </Typography>
+        </Box>
+      );
+
       return (
         <>
           <Box sx={{ maxWidth: 1050, mx: "auto", pb: 4 }}>
-            {/* Header */}
-            <Box
-              sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 3 }}
-            >
+
+            {/* Header — identical to Customer First */}
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 2 }}>
               <Tooltip title="Back to list (Esc)">
                 <IconButton
                   onClick={() => setView("list")}
-                  sx={{
-                    border: "1px solid",
-                    borderColor: "divider",
-                    borderRadius: tokens.radius.sm,
-                    "&:hover": {
-                      bgcolor: tokens.primarySoft,
-                      borderColor: tokens.primaryBorder,
-                    },
-                  }}
+                  sx={{ border: "1px solid", borderColor: "divider", borderRadius: tokens.radius.sm, "&:hover": { bgcolor: tokens.primarySoft, borderColor: tokens.primaryBorder } }}
                 >
                   <ChevronLeft size={20} />
                 </IconButton>
               </Tooltip>
               <Box sx={{ flex: 1 }}>
-                <Typography
-                  variant="h6"
-                  sx={{ fontWeight: 800, letterSpacing: "-0.01em" }}
-                >
-                  Product First — Bulk Sales
+                <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: "-0.01em" }}>
+                  New Sales Invoice
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Select a product, then assign customers with their quantities
+                  Product First — one product, distribute to many customers
                 </Typography>
               </Box>
               <ToggleButtonGroup
-                value={entryMode}
-                exclusive
-                onChange={(_e, v) => v && setEntryMode(v)}
-                size="small"
-                sx={{
-                  bgcolor: "rgba(0,0,0,0.04)",
-                  p: "3px",
-                  borderRadius: tokens.radius.sm,
-                  border: "none",
-                  "& .MuiToggleButtonGroup-grouped": {
-                    border: 0,
-                    borderRadius: `${tokens.radius.sm} !important`,
-                    mx: 0.25,
-                  },
-                }}
+                value={entryMode} exclusive onChange={(_e, v) => v && setEntryMode(v)} size="small"
+                sx={{ bgcolor: "rgba(0,0,0,0.04)", p: "3px", borderRadius: tokens.radius.sm, border: "none", "& .MuiToggleButtonGroup-grouped": { border: 0, borderRadius: `${tokens.radius.sm} !important`, mx: 0.25 } }}
               >
-                <ToggleButton
-                  value="customer"
-                  sx={{
-                    textTransform: "none",
-                    fontWeight: 700,
-                    px: 2,
-                    py: 0.75,
-                    fontSize: "0.8rem",
-                    "&.Mui-selected": {
-                      bgcolor: "white",
-                      boxShadow: "0 1px 4px rgba(0,0,0,0.1)",
-                      color: tokens.primary,
-                    },
-                  }}
-                >
-                  <Users size={14} style={{ marginRight: 5 }} />
-                  Customer First
+                <ToggleButton value="customer" sx={{ textTransform: "none", fontWeight: 700, px: 2, py: 0.75, fontSize: "0.8rem", "&.Mui-selected": { bgcolor: "white", boxShadow: "0 1px 4px rgba(0,0,0,0.1)", color: tokens.primary } }}>
+                  <Users size={14} style={{ marginRight: 5 }} />Customer First
                 </ToggleButton>
-                <ToggleButton
-                  value="product"
-                  sx={{
-                    textTransform: "none",
-                    fontWeight: 700,
-                    px: 2,
-                    py: 0.75,
-                    fontSize: "0.8rem",
-                    "&.Mui-selected": {
-                      bgcolor: "white",
-                      boxShadow: "0 1px 4px rgba(0,0,0,0.1)",
-                      color: tokens.primary,
-                    },
-                  }}
-                >
-                  <Package size={14} style={{ marginRight: 5 }} />
-                  Product First
+                <ToggleButton value="product" sx={{ textTransform: "none", fontWeight: 700, px: 2, py: 0.75, fontSize: "0.8rem", "&.Mui-selected": { bgcolor: "white", boxShadow: "0 1px 4px rgba(0,0,0,0.1)", color: tokens.primary } }}>
+                  <Package size={14} style={{ marginRight: 5 }} />Product First
                 </ToggleButton>
               </ToggleButtonGroup>
             </Box>
 
-            {/* Step 1 */}
+            {/* ── Step 1: Product & Settings ── */}
             <EnhancedCard accent sx={{ mb: 2 }} tokens={tokens}>
+              {/* Step header strip */}
+              <Box sx={{ px: 2.5, py: 1.5, display: "flex", alignItems: "center", gap: 1.25, borderBottom: "1px solid", borderColor: alpha(tokens.primary, 0.12), bgcolor: tokens.primarySoft }}>
+                <StepCircle n={1} active />
+                <Box>
+                  <Typography variant="overline" sx={{ fontWeight: 800, color: tokens.primary, letterSpacing: "0.08em", fontSize: "0.65rem", lineHeight: 1 }}>
+                    Choose Product &amp; Settings
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: alpha(tokens.primary, 0.65), display: "block", lineHeight: 1.2, mt: 0.25 }}>
+                    Pick the item to sell, set invoice date and GST preference
+                  </Typography>
+                </Box>
+              </Box>
+
               <CardContent sx={{ p: 2.5 }}>
-                <SectionLabel icon={Package} tokens={tokens}>
-                  Step 1 — Choose Product
-                </SectionLabel>
-                <Grid container spacing={2} sx={{ mt: 1 }}>
-                  <Grid item xs={12} sm={7}>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, sm: 7 }}>
                     <Autocomplete
                       options={stockItems}
                       getOptionLabel={(o) => o.name || ""}
                       value={pfProduct}
                       onChange={(_e, v) => {
                         setPfProduct(v);
-                        if (v)
-                          setPfCustomers((prev) =>
-                            prev.map((r) => ({
-                              ...r,
-                              price: r.price || (v.salePrice ?? ""),
-                            })),
-                          );
+                        if (v) setPfCustomers((prev) => prev.map((r) => ({ ...r, price: r.price || (v.salePrice ?? "") })));
                       }}
                       renderInput={(params) => (
-                        <TextField
-                          {...params}
-                          label="Product *"
-                          placeholder="Search product…"
-                          size="small"
-                          sx={inputSx}
-                        />
+                        <TextField {...params} label="Product *" placeholder="Search or select a product…" size="small" sx={inputSx} />
                       )}
                     />
                   </Grid>
-                  <Grid item xs={6} sm={3}>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      type="date"
-                      label="Invoice Date"
-                      value={pfDate}
-                      onChange={(e) => setPfDate(e.target.value)}
-                      slotProps={{ inputLabel: { shrink: true } }}
-                      sx={inputSx}
-                    />
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <TextField fullWidth size="small" type="date" label="Invoice Date" value={pfDate} onChange={(e) => setPfDate(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} sx={inputSx} />
                   </Grid>
-                  <Grid
-                    item
-                    xs={6}
-                    sm={2}
-                    sx={{ display: "flex", alignItems: "center" }}
-                  >
+                  <Grid size={{ xs: 6, sm: 2 }} sx={{ display: "flex", alignItems: "center" }}>
                     <FormControlLabel
-                      control={
-                        <Switch
-                          size="small"
-                          checked={pfNoGST}
-                          onChange={(e) => setPfNoGST(e.target.checked)}
-                        />
-                      }
-                      label={
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          No GST
-                        </Typography>
-                      }
+                      control={<Switch size="small" checked={pfNoGST} onChange={(e) => setPfNoGST(e.target.checked)} />}
+                      label={<Typography variant="body2" sx={{ fontWeight: 600 }}>No GST</Typography>}
                       sx={{ m: 0 }}
                     />
                   </Grid>
-                  {pfProduct && (
-                    <Grid item xs={12}>
-                      <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
-                        <StatPill
-                          tokens={tokens}
-                          label="GST"
-                          value={`${pfNoGST ? "0" : pfProduct.taxRate || 0}%`}
-                        />
-                        <StatPill
-                          tokens={tokens}
-                          label="In Stock"
-                          value={pfProduct.stock ?? "—"}
-                          color="success"
-                        />
-                        <StatPill
-                          tokens={tokens}
-                          label="Sale Price"
-                          value={`₹${pfProduct.salePrice || 0}`}
-                        />
-                      </Box>
-                    </Grid>
-                  )}
                 </Grid>
+
+                {/* Product detail panel */}
+                {pfProduct ? (
+                  <Box
+                    sx={{
+                      mt: 2, borderRadius: tokens.radius.md, overflow: "hidden",
+                      border: `1.5px solid ${tokens.primaryBorder}`,
+                      display: "flex", flexWrap: "wrap",
+                    }}
+                  >
+                    {/* Product name block */}
+                    <Box sx={{ flex: "1 1 160px", px: 2.5, py: 1.75, borderRight: "1px solid", borderColor: "divider", bgcolor: "background.paper" }}>
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", fontSize: "0.62rem", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                        Selected Product
+                      </Typography>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 800, color: "text.primary", mt: 0.25, lineHeight: 1.25 }}>
+                        {pfProduct.name}
+                      </Typography>
+                      {pfProduct.hsnCode && (
+                        <Typography variant="caption" sx={{ color: "text.disabled", fontFamily: "monospace" }}>
+                          HSN {pfProduct.hsnCode}
+                        </Typography>
+                      )}
+                    </Box>
+                    {/* Stats columns */}
+                    {[
+                      { label: "Sale Price", value: `₹${pfProduct.salePrice || 0}`, color: tokens.primary },
+                      { label: "In Stock",   value: `${pfProduct.stock ?? "—"} ${pfProduct.unit || ""}`.trim(), color: tokens.success },
+                      { label: "GST Rate",   value: `${pfNoGST ? 0 : (pfProduct.taxRate || 0)}%`, color: "text.primary" },
+                      ...(pfProduct.purchasePrice
+                        ? [{ label: "Margin", value: `₹${((pfProduct.salePrice || 0) - pfProduct.purchasePrice).toFixed(0)}`, color: tokens.success }]
+                        : []),
+                    ].map((stat, i, arr) => (
+                      <Box
+                        key={i}
+                        sx={{
+                          flex: "0 0 auto", px: 2.5, py: 1.75,
+                          display: "flex", flexDirection: "column", justifyContent: "center",
+                          borderRight: i < arr.length - 1 ? "1px solid" : "none",
+                          borderColor: "divider",
+                          bgcolor: i === 0 ? alpha(tokens.primary, 0.03) : "background.paper",
+                          minWidth: 90,
+                        }}
+                      >
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: "text.disabled", fontSize: "0.62rem", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                          {stat.label}
+                        </Typography>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 800, color: stat.color, mt: 0.25, fontSize: "0.95rem" }}>
+                          {stat.value}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                ) : (
+                  <Box
+                    sx={{
+                      mt: 2, py: 3, borderRadius: tokens.radius.md,
+                      border: "1.5px dashed", borderColor: "divider",
+                      display: "flex", flexDirection: "column", alignItems: "center", gap: 1,
+                    }}
+                  >
+                    <Box sx={{ width: 40, height: 40, borderRadius: "50%", bgcolor: alpha(tokens.primary, 0.07), display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Package size={20} style={{ color: alpha(tokens.primary, 0.4) }} />
+                    </Box>
+                    <Typography variant="body2" sx={{ color: "text.disabled", fontWeight: 500 }}>
+                      Select a product above to see its details
+                    </Typography>
+                  </Box>
+                )}
               </CardContent>
             </EnhancedCard>
 
-            {/* Step 2 */}
+            {/* ── Step 2: Customers ── */}
             <EnhancedCard sx={{ mb: 2 }} tokens={tokens}>
-              <Box
-                sx={{
-                  px: 2.5,
-                  py: 2,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  borderBottom: "1px solid rgba(0,0,0,0.06)",
-                  bgcolor: "rgba(0,0,0,0.015)",
-                }}
-              >
-                <Box>
-                  <SectionLabel icon={Users} tokens={tokens}>
-                    Step 2 — Add Customers
-                  </SectionLabel>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ mt: 0.25, display: "block" }}
-                  >
-                    Each row creates a separate invoice
-                  </Typography>
+              {/* Step header strip */}
+              <Box sx={{ px: 2.5, py: 1.5, display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid", borderColor: "divider", bgcolor: "rgba(0,0,0,0.015)" }}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+                  <StepCircle n={2} active={!!pfProduct} />
+                  <Box>
+                    <Typography variant="overline" sx={{ fontWeight: 800, color: pfProduct ? "text.primary" : "text.disabled", letterSpacing: "0.08em", fontSize: "0.65rem", lineHeight: 1 }}>
+                      Add Customers &amp; Quantities
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: "text.disabled", display: "block", lineHeight: 1.2, mt: 0.25 }}>
+                      Each row generates a separate invoice
+                    </Typography>
+                  </Box>
                 </Box>
                 <Chip
                   label={`${pfCustomers.length} row${pfCustomers.length !== 1 ? "s" : ""}`}
                   size="small"
-                  sx={{
-                    fontWeight: 700,
-                    bgcolor: tokens.primarySoft,
-                    color: tokens.primary,
-                    border: `1px solid ${tokens.primaryBorder}`,
-                  }}
+                  sx={{ fontWeight: 700, bgcolor: tokens.primarySoft, color: tokens.primary, border: `1px solid ${tokens.primaryBorder}` }}
                 />
               </Box>
+
+              {/* Table */}
               <TableContainer sx={{ overflowX: "auto" }}>
                 <Table size="small" sx={{ minWidth: 650 }}>
                   <TableHead>
-                    <TableRow sx={{ bgcolor: "rgba(0,0,0,0.018)" }}>
-                      {[
-                        "#",
-                        "Customer *",
-                        "Qty",
-                        "Rate (₹)",
-                        "Disc %",
-                        "Amount",
-                        "",
-                      ].map((h, i) => (
+                    <TableRow>
+                      {["#", "Customer *", "Qty", "Rate (₹)", "Disc %", "Amount", ""].map((h, i) => (
                         <TableCell
                           key={i}
-                          align={
-                            i >= 2 && i <= 4
-                              ? "center"
-                              : i === 5
-                                ? "right"
-                                : "left"
-                          }
+                          align={i >= 2 && i <= 4 ? "center" : i === 5 ? "right" : "left"}
                           sx={{
-                            fontWeight: 700,
-                            fontSize: "0.72rem",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.06em",
-                            color: "text.secondary",
-                            pl: i === 0 ? 3 : undefined,
-                            pr: i === 6 ? 1 : undefined,
+                            fontWeight: 700, fontSize: "0.72rem", textTransform: "uppercase",
+                            letterSpacing: "0.06em", color: "text.secondary",
+                            pl: i === 0 ? 3 : undefined, pr: i === 6 ? 1 : undefined,
                             width: [36, undefined, 100, 140, 90, 130, 44][i],
+                            borderBottom: "2px solid", borderColor: "divider",
+                            bgcolor: "rgba(0,0,0,0.018)", py: 1.25,
                           }}
                         >
                           {h}
@@ -1867,213 +1996,116 @@ const SalesPage = ({ mode = "sales" }) => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {pfCustomers.map((row, idx) => {
-                      const rowAmt = pfRowTotal(row);
-                      return (
-                        <TableRow
-                          key={row._key}
-                          sx={{ "&:hover": { bgcolor: tokens.primarySoft } }}
-                        >
-                          <TableCell
+                    {pfCustomers.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} sx={{ py: 5, textAlign: "center", border: 0 }}>
+                          <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+                            <Box sx={{ width: 44, height: 44, borderRadius: "50%", bgcolor: alpha(tokens.primary, 0.06), display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <Users size={22} style={{ color: alpha(tokens.primary, 0.3) }} />
+                            </Box>
+                            <Typography variant="body2" sx={{ color: "text.disabled", fontWeight: 500 }}>
+                              No customers added yet
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: "text.disabled" }}>
+                              Click "Add Customer Row" below to start
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      pfCustomers.map((row, idx) => {
+                        const rowAmt = pfRowTotal(row);
+                        const isValid = row.party && Number(row.qty) > 0;
+                        return (
+                          <TableRow
+                            key={row._key}
                             sx={{
-                              pl: 3,
-                              color: "text.secondary",
-                              fontWeight: 700,
-                              fontSize: "0.8rem",
+                              "&:hover": { bgcolor: tokens.primarySoft },
+                              ...(isValid && { bgcolor: alpha(tokens.success, 0.025) }),
+                              transition: "background 0.1s",
                             }}
                           >
-                            {idx + 1}
-                          </TableCell>
-                          <TableCell sx={{ py: 1.25 }}>
-                            <Autocomplete
-                              options={parties}
-                              getOptionLabel={(o) => o.name || ""}
-                              value={row.party}
-                              onChange={(_e, v) =>
-                                updatePfCustomer(row._key, "party", v)
-                              }
-                              size="small"
-                              renderInput={(params) => (
-                                <TextField
-                                  {...params}
-                                  placeholder="Search customer…"
-                                  size="small"
-                                  sx={inputSx}
-                                />
-                              )}
-                            />
-                          </TableCell>
-                          <TableCell align="center" sx={{ py: 1.25 }}>
-                            <TextField
-                              type="number"
-                              size="small"
-                              value={row.qty}
-                              placeholder="1"
-                              onChange={(e) =>
-                                updatePfCustomer(
-                                  row._key,
-                                  "qty",
-                                  e.target.value === ""
-                                    ? ""
-                                    : Number(e.target.value),
-                                )
-                              }
-                              onFocus={(e) => e.target.select()}
-                              slotProps={{
-                                input: {
-                                  min: 0,
-                                  step: 1,
-                                  style: { textAlign: "center" },
-                                },
-                              }}
-                              sx={{ width: 80, ...inputSx }}
-                            />
-                          </TableCell>
-                          <TableCell align="right" sx={{ py: 1.25 }}>
-                            <TextField
-                              type="number"
-                              size="small"
-                              value={row.price}
-                              placeholder="0.00"
-                              onChange={(e) =>
-                                updatePfCustomer(
-                                  row._key,
-                                  "price",
-                                  e.target.value,
-                                )
-                              }
-                              onFocus={(e) => e.target.select()}
-                              slotProps={{
-                                input: {
-                                  startAdornment: (
-                                    <InputAdornment position="start">
-                                      ₹
-                                    </InputAdornment>
-                                  ),
-                                  min: 0,
-                                  step: 0.01,
-                                  style: { textAlign: "right" },
-                                },
-                              }}
-                              sx={{ width: 120, ...inputSx }}
-                            />
-                          </TableCell>
-                          <TableCell align="center" sx={{ py: 1.25 }}>
-                            <TextField
-                              type="number"
-                              size="small"
-                              value={row.discountPercent}
-                              placeholder="0"
-                              onChange={(e) =>
-                                updatePfCustomer(
-                                  row._key,
-                                  "discountPercent",
-                                  e.target.value,
-                                )
-                              }
-                              onFocus={(e) => e.target.select()}
-                              slotProps={{
-                                input: {
-                                  min: 0,
-                                  max: 100,
-                                  step: 0.5,
-                                  style: { textAlign: "center" },
-                                },
-                              }}
-                              sx={{ width: 76, ...inputSx }}
-                            />
-                          </TableCell>
-                          <TableCell align="right" sx={{ py: 1.25 }}>
-                            <Typography
-                              variant="body2"
-                              sx={{
-                                fontWeight: 800,
-                                color:
-                                  rowAmt > 0 ? tokens.primary : "text.disabled",
-                              }}
-                            >
-                              {rowAmt > 0 ? `₹${rowAmt.toFixed(2)}` : "—"}
-                            </Typography>
-                          </TableCell>
-                          <TableCell sx={{ pr: 1 }}>
-                            <IconButton
-                              size="small"
-                              onClick={() => removePfCustomer(row._key)}
-                              sx={{
-                                color: "text.disabled",
-                                "&:hover": {
-                                  color: tokens.error,
-                                  bgcolor: `${tokens.error}12`,
-                                },
-                                borderRadius: tokens.radius.sm,
-                              }}
-                            >
-                              <Trash2 size={15} />
-                            </IconButton>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                            <TableCell sx={{ pl: 3, color: "text.disabled", fontWeight: 700, fontSize: "0.78rem" }}>
+                              {idx + 1}
+                            </TableCell>
+                            <TableCell sx={{ py: 1.25 }}>
+                              <Autocomplete
+                                options={parties}
+                                getOptionLabel={(o) => o.name || ""}
+                                value={row.party}
+                                onChange={(_e, v) => updatePfCustomer(row._key, "party", v)}
+                                size="small"
+                                renderInput={(params) => (
+                                  <TextField {...params} placeholder="Search customer…" size="small" sx={inputSx} />
+                                )}
+                              />
+                            </TableCell>
+                            <TableCell align="center" sx={{ py: 1.25 }}>
+                              <TextField
+                                type="number" size="small" value={row.qty} placeholder="1"
+                                onChange={(e) => updatePfCustomer(row._key, "qty", e.target.value === "" ? "" : Number(e.target.value))}
+                                onFocus={(e) => e.target.select()}
+                                slotProps={{ input: { min: 0, step: 1, style: { textAlign: "center" } } }}
+                                sx={{ width: 80, ...inputSx }}
+                              />
+                            </TableCell>
+                            <TableCell align="right" sx={{ py: 1.25 }}>
+                              <TextField
+                                type="number" size="small" value={row.price} placeholder="0.00"
+                                onChange={(e) => updatePfCustomer(row._key, "price", e.target.value)}
+                                onFocus={(e) => e.target.select()}
+                                slotProps={{ input: { startAdornment: <InputAdornment position="start">₹</InputAdornment>, min: 0, step: 0.01, style: { textAlign: "right" } } }}
+                                sx={{ width: 120, ...inputSx }}
+                              />
+                            </TableCell>
+                            <TableCell align="center" sx={{ py: 1.25 }}>
+                              <TextField
+                                type="number" size="small" value={row.discountPercent} placeholder="0"
+                                onChange={(e) => updatePfCustomer(row._key, "discountPercent", e.target.value)}
+                                onFocus={(e) => e.target.select()}
+                                slotProps={{ input: { min: 0, max: 100, step: 0.5, style: { textAlign: "center" } } }}
+                                sx={{ width: 76, ...inputSx }}
+                              />
+                            </TableCell>
+                            <TableCell align="right" sx={{ py: 1.25 }}>
+                              <Typography variant="body2" sx={{ fontWeight: 800, fontSize: "0.9rem", color: rowAmt > 0 ? tokens.primary : "text.disabled" }}>
+                                {rowAmt > 0 ? `₹${rowAmt.toFixed(2)}` : "—"}
+                              </Typography>
+                            </TableCell>
+                            <TableCell sx={{ pr: 1 }}>
+                              <IconButton
+                                size="small"
+                                onClick={() => removePfCustomer(row._key)}
+                                sx={{ color: "text.disabled", "&:hover": { color: tokens.error, bgcolor: `${tokens.error}12` }, borderRadius: tokens.radius.sm }}
+                              >
+                                <Trash2 size={15} />
+                              </IconButton>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
                   </TableBody>
                 </Table>
               </TableContainer>
-              <Box
-                sx={{
-                  p: 2.5,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 2,
-                  borderTop: "1px solid rgba(0,0,0,0.06)",
-                  bgcolor: "rgba(0,0,0,0.012)",
-                }}
-              >
+
+              {/* Table footer: add row + running total */}
+              <Box sx={{ px: 2.5, py: 1.75, display: "flex", alignItems: "center", gap: 2, borderTop: "1px solid rgba(0,0,0,0.06)", bgcolor: "rgba(0,0,0,0.012)" }}>
                 <Button
                   startIcon={<Plus size={15} />}
                   variant="outlined"
                   size="small"
                   onClick={addPfCustomer}
-                  sx={{
-                    fontWeight: 700,
-                    borderRadius: tokens.radius.sm,
-                    textTransform: "none",
-                    borderColor: tokens.primaryBorder,
-                    color: tokens.primary,
-                    "&:hover": { bgcolor: tokens.primarySoft },
-                  }}
+                  sx={{ fontWeight: 700, borderRadius: tokens.radius.sm, textTransform: "none", borderColor: tokens.primaryBorder, color: tokens.primary, "&:hover": { bgcolor: tokens.primarySoft } }}
                 >
-                  Add Customer
+                  Add Customer Row
                 </Button>
-                <Typography variant="caption" color="text.secondary">
-                  Each row = one invoice
-                </Typography>
-                <Box
-                  sx={{
-                    ml: "auto",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 2,
-                  }}
-                >
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ fontWeight: 500 }}
-                  >
+                <Box sx={{ ml: "auto", display: "flex", alignItems: "center", gap: 2 }}>
+                  <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 500 }}>
                     {pfValidCount} valid invoice{pfValidCount !== 1 ? "s" : ""}
                   </Typography>
-                  <Box
-                    sx={{
-                      px: 2,
-                      py: 0.75,
-                      bgcolor: tokens.primarySoft,
-                      borderRadius: tokens.radius.sm,
-                      border: `1px solid ${tokens.primaryBorder}`,
-                    }}
-                  >
-                    <Typography
-                      variant="subtitle2"
-                      sx={{ fontWeight: 800, color: tokens.primary }}
-                    >
+                  <Box sx={{ px: 2, py: 0.75, bgcolor: tokens.primarySoft, borderRadius: tokens.radius.sm, border: `1px solid ${tokens.primaryBorder}` }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 800, color: tokens.primary }}>
                       ₹{pfTotal.toFixed(2)}
                     </Typography>
                   </Box>
@@ -2081,42 +2113,13 @@ const SalesPage = ({ mode = "sales" }) => {
               </Box>
             </EnhancedCard>
 
-            <Box
-              sx={{
-                display: "flex",
-                gap: 2,
-                justifyContent: "flex-end",
-                alignItems: "center",
-                mt: 2,
-              }}
-            >
+            {/* ── Save bar ── */}
+            <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end", alignItems: "center", mt: 1 }}>
               <Box sx={{ display: "flex", gap: 1 }}>
-                {[{ key: "Esc", label: "Back" }].map((s) => (
-                  <Box
-                    key={s.key}
-                    sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
-                  >
-                    <Box
-                      component="kbd"
-                      sx={{
-                        px: 0.9,
-                        py: 0.3,
-                        borderRadius: "6px",
-                        bgcolor: "rgba(0,0,0,0.06)",
-                        border: "1px solid rgba(0,0,0,0.12)",
-                        fontSize: "0.65rem",
-                        fontFamily: "monospace",
-                        fontWeight: 700,
-                        color: "text.secondary",
-                      }}
-                    >
-                      {s.key}
-                    </Box>
-                    <Typography variant="caption" color="text.secondary">
-                      {s.label}
-                    </Typography>
-                  </Box>
-                ))}
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                  <Box component="kbd" sx={{ px: 0.9, py: 0.3, borderRadius: "6px", bgcolor: "rgba(0,0,0,0.06)", border: "1px solid rgba(0,0,0,0.12)", fontSize: "0.65rem", fontFamily: "monospace", fontWeight: 700, color: "text.secondary" }}>Esc</Box>
+                  <Typography variant="caption" color="text.secondary">Back</Typography>
+                </Box>
               </Box>
               <GradientButton
                 tokens={tokens}
@@ -2125,11 +2128,10 @@ const SalesPage = ({ mode = "sales" }) => {
                 disabled={pfIsSaving || !pfProduct || pfValidCount === 0}
                 sx={{ px: 4, py: 1.2, fontSize: "0.95rem" }}
               >
-                {pfIsSaving
-                  ? "Saving…"
-                  : `Save ${pfValidCount || ""} Invoice${pfValidCount !== 1 ? "s" : ""}`}
+                {pfIsSaving ? "Saving…" : `Save ${pfValidCount || ""} Invoice${pfValidCount !== 1 ? "s" : ""}`}
               </GradientButton>
             </Box>
+
           </Box>
           {quickAddDialogs}
         </>
@@ -2256,7 +2258,7 @@ const SalesPage = ({ mode = "sales" }) => {
                 </Box>
                 <CardContent sx={{ pt: 1, pb: 2, px: 2.5 }}>
                   <Grid container spacing={2}>
-                    <Grid item xs={12} sm={6}>
+                    <Grid size={12}>
                       <Autocomplete
                         options={parties}
                         getOptionLabel={(option) =>
@@ -2274,8 +2276,8 @@ const SalesPage = ({ mode = "sales" }) => {
                           filtered.push({
                             _addNew: true,
                             _display: inputValue
-                              ? `+ Create "${inputValue}"`
-                              : `+ New ${isSale ? "Customer" : "Vendor"}`,
+                              ? ` Create "${inputValue}"`
+                              : ` New ${isSale ? "Customer" : "Vendor"}`,
                             _inputValue: inputValue,
                             id: "__add_new_party__",
                             name: "",
@@ -2315,15 +2317,46 @@ const SalesPage = ({ mode = "sales" }) => {
                         renderInput={(params) => (
                           <TextField
                             {...params}
-                            label={isSale ? "Customer *" : "Vendor *"}
-                            placeholder={`Select ${isSale ? "customer" : "vendor"}…`}
+                            label={isSale ? "Customer" : "Vendor"}
+                            placeholder={`Search ${isSale ? "customer" : "vendor"}… (optional — Cash & Carry)`}
                             size="small"
                             sx={inputSx}
                           />
                         )}
                       />
+                      {!selectedParty && (
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 0.75,
+                            mt: 0.75,
+                          }}
+                        >
+                          <Chip
+                            size="small"
+                            label="Cash & Carry"
+                            sx={{
+                              fontWeight: 700,
+                              fontSize: "0.7rem",
+                              bgcolor: tokens.successSoft,
+                              color: "success.dark",
+                              border: "1px solid rgba(16,185,129,0.25)",
+                              height: 20,
+                            }}
+                          />
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ fontSize: "0.7rem" }}
+                          >
+                            No {isSale ? "customer" : "vendor"} selected — will save as{" "}
+                            {isSale ? "Cash & Carry" : "Cash Purchase"}
+                          </Typography>
+                        </Box>
+                      )}
                     </Grid>
-                    <Grid item xs={6} sm={3}>
+                    <Grid size={6}>
                       <TextField
                         fullWidth
                         size="small"
@@ -2342,7 +2375,7 @@ const SalesPage = ({ mode = "sales" }) => {
                         sx={inputSx}
                       />
                     </Grid>
-                    <Grid item xs={6} sm={3}>
+                    <Grid size={6}>
                       <TextField
                         fullWidth
                         size="small"
@@ -2422,7 +2455,7 @@ const SalesPage = ({ mode = "sales" }) => {
                             },
                           }}
                         >
-                          + Tax (Excl.)
+                          Exclusive
                         </ToggleButton>
                         <ToggleButton
                           value="inclusive"
@@ -2439,7 +2472,7 @@ const SalesPage = ({ mode = "sales" }) => {
                             },
                           }}
                         >
-                          Tax in price (Incl.)
+                          Inclusive
                         </ToggleButton>
                       </ToggleButtonGroup>
                     </Grid>
@@ -2517,21 +2550,30 @@ const SalesPage = ({ mode = "sales" }) => {
                           >
                             <TableCell sx={{ pl: 3, py: 1.25 }}>
                               <Autocomplete
+                                freeSolo
                                 options={stockItems}
-                                getOptionLabel={(option) =>
-                                  option._addNew
+                                getOptionLabel={(option) => {
+                                  if (typeof option === "string") return option;
+                                  return option._addNew
                                     ? option._display
-                                    : option.name || ""
-                                }
+                                    : option.name || "";
+                                }}
                                 size="small"
                                 value={
-                                  stockItems.find(
-                                    (i) => i.id === item.itemId,
-                                  ) || null
+                                  item.itemId
+                                    ? stockItems.find(
+                                        (i) => i.id === item.itemId,
+                                      ) || null
+                                    : item.name || null
                                 }
-                                isOptionEqualToValue={(opt, val) =>
-                                  opt.id === val.id
-                                }
+                                isOptionEqualToValue={(opt, val) => {
+                                  if (
+                                    typeof opt === "string" ||
+                                    typeof val === "string"
+                                  )
+                                    return opt === val;
+                                  return opt.id === val.id;
+                                }}
                                 filterOptions={(options, { inputValue }) => {
                                   const lower = inputValue.toLowerCase();
                                   const filtered = options.filter(
@@ -2542,8 +2584,8 @@ const SalesPage = ({ mode = "sales" }) => {
                                   filtered.push({
                                     _addNew: true,
                                     _display: inputValue
-                                      ? `+ Create "${inputValue}"`
-                                      : "+ New Item",
+                                      ? ` Create "${inputValue}"`
+                                      : ` New Item`,
                                     _inputValue: inputValue,
                                     id: "__add_new_item__",
                                     name: "",
@@ -2551,6 +2593,16 @@ const SalesPage = ({ mode = "sales" }) => {
                                   return filtered;
                                 }}
                                 onChange={(_e, v) => {
+                                  if (typeof v === "string") {
+                                    const newItems = [...items];
+                                    newItems[index] = {
+                                      ...newItems[index],
+                                      itemId: "",
+                                      name: v,
+                                    };
+                                    setItems(newItems);
+                                    return;
+                                  }
                                   if (v?._addNew) {
                                     openQuickAddItem(v._inputValue, (newItem) =>
                                       updateItemRow(
@@ -2562,6 +2614,16 @@ const SalesPage = ({ mode = "sales" }) => {
                                     return;
                                   }
                                   updateItemRow(index, "itemId", v?.id);
+                                }}
+                                onInputChange={(_e, val, reason) => {
+                                  if (reason === "input" && !item.itemId) {
+                                    const newItems = [...items];
+                                    newItems[index] = {
+                                      ...newItems[index],
+                                      name: val,
+                                    };
+                                    setItems(newItems);
+                                  }
                                 }}
                                 renderOption={(props, option) =>
                                   option._addNew ? (
@@ -2952,6 +3014,128 @@ const SalesPage = ({ mode = "sales" }) => {
                           </Typography>
                         </Box>
                       ))}
+                      {/* Round Off row */}
+                      <Box
+                        sx={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          mt: 0.25,
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 0.75,
+                          }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            Round Off
+                          </Typography>
+                          {(() => {
+                            const t = calculateTotal();
+                            const target =
+                              roundOff > 0
+                                ? getRoundUpSeq(t)[roundOff - 1]
+                                : roundOff < 0
+                                  ? getRoundDownSeq(t)[Math.abs(roundOff) - 1]
+                                  : null;
+                            return target != null ? (
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  bgcolor: alpha(
+                                    roundOff > 0 ? tokens.success : tokens.error,
+                                    0.1,
+                                  ),
+                                  color:
+                                    roundOff > 0 ? tokens.success : tokens.error,
+                                  fontWeight: 800,
+                                  fontSize: "0.62rem",
+                                  px: 0.6,
+                                  py: 0.1,
+                                  borderRadius: "4px",
+                                  letterSpacing: "0.02em",
+                                }}
+                              >
+                                → ₹{target.toFixed(0)}
+                              </Typography>
+                            ) : null;
+                          })()}
+                        </Box>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 0.5,
+                          }}
+                        >
+                          {(() => {
+                            const ro = calculateRoundOff();
+                            return (
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontWeight: 700,
+                                  minWidth: "56px",
+                                  textAlign: "right",
+                                  color:
+                                    ro > 0
+                                      ? tokens.success
+                                      : ro < 0
+                                        ? tokens.error
+                                        : "text.disabled",
+                                }}
+                              >
+                                {roundOff !== 0
+                                  ? `${ro >= 0 ? "+" : ""}₹${ro.toFixed(2)}`
+                                  : "—"}
+                              </Typography>
+                            );
+                          })()}
+                          <IconButton
+                            size="small"
+                            onClick={() =>
+                              setRoundOff((l) => Math.max(-3, l - 1))
+                            }
+                            disabled={
+                              roundOff <= -getRoundDownSeq(calculateTotal()).length
+                            }
+                            sx={{
+                              p: 0.4,
+                              border: `1px solid ${alpha(tokens.error, 0.35)}`,
+                              color: tokens.error,
+                              bgcolor: alpha(tokens.error, 0.06),
+                              borderRadius: "6px",
+                              "&:hover": { bgcolor: alpha(tokens.error, 0.12) },
+                              "&.Mui-disabled": { opacity: 0.35 },
+                            }}
+                          >
+                            <Minus size={12} />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() =>
+                              setRoundOff((l) => Math.min(3, l + 1))
+                            }
+                            disabled={
+                              roundOff >= getRoundUpSeq(calculateTotal()).length
+                            }
+                            sx={{
+                              p: 0.4,
+                              border: `1px solid ${alpha(tokens.success, 0.45)}`,
+                              color: tokens.success,
+                              bgcolor: alpha(tokens.success, 0.06),
+                              borderRadius: "6px",
+                              "&:hover": { bgcolor: alpha(tokens.success, 0.12) },
+                              "&.Mui-disabled": { opacity: 0.35 },
+                            }}
+                          >
+                            <Plus size={12} />
+                          </IconButton>
+                        </Box>
+                      </Box>
                     </Box>
                     <Box
                       sx={{
@@ -2983,13 +3167,13 @@ const SalesPage = ({ mode = "sales" }) => {
                             letterSpacing: "-0.02em",
                           }}
                         >
-                          ₹{calculateTotal().toFixed(2)}
+                          ₹{calculateFinalTotal().toFixed(2)}
                         </Typography>
                       </Box>
                     </Box>
 
-                    {/* Advance — sales only */}
-                    {isSale && (
+                    {/* Advance — sales only, not for cash & carry */}
+                    {isSale && !!selectedParty?.id && (
                       <Box
                         sx={{
                           mb: 1.5,
@@ -3080,7 +3264,7 @@ const SalesPage = ({ mode = "sales" }) => {
                               ₹
                               {Math.max(
                                 0,
-                                calculateTotal() - Number(advance),
+                                calculateFinalTotal() - Number(advance),
                               ).toFixed(2)}
                             </Typography>
                           </Box>
@@ -3289,25 +3473,6 @@ const SalesPage = ({ mode = "sales" }) => {
             flexWrap: "wrap",
           }}
         >
-          <TextField
-            select
-            size="small"
-            value={paperSize}
-            onChange={(e) => setPaperSize(e.target.value)}
-            sx={{
-              minWidth: 90,
-              "& .MuiOutlinedInput-root": {
-                borderRadius: tokens.radius.sm,
-                bgcolor: "white",
-              },
-            }}
-          >
-            {["A4", "A5", "Letter", "Legal"].map((s) => (
-              <MenuItem key={s} value={s}>
-                {s}
-              </MenuItem>
-            ))}
-          </TextField>
           {isSale && (
             <Button
               variant="outlined"
@@ -3343,6 +3508,24 @@ const SalesPage = ({ mode = "sales" }) => {
           </GradientButton>
         </Box>
       </Box>
+
+      {/* ── Stats Strip ── */}
+      {transactions.length > 0 && (
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: 2 }}>
+          {[
+            { label: isSale ? 'Total Revenue' : 'Total Spend', value: `₹${totalRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, sub: `${transactions.length} ${isSale ? 'invoice' : 'bill'}${transactions.length !== 1 ? 's' : ''}`, color: tokens.primary, soft: tokens.primarySoft },
+            { label: 'This Month', value: `₹${thisMonthTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, sub: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }), color: tokens.success, soft: tokens.successSoft },
+            { label: 'Overdue', value: overdueCount, sub: overdueCount === 0 ? 'All up to date' : `${overdueCount} past due`, color: overdueCount > 0 ? tokens.error : tokens.success, soft: overdueCount > 0 ? `${tokens.error}12` : tokens.successSoft },
+          ].map(({ label, value, sub, color, soft }) => (
+            <Box key={label} sx={{ bgcolor: soft, border: `1px solid ${color}22`, borderRadius: tokens.radius.lg, p: 2, position: 'relative', overflow: 'hidden' }}>
+              <Box sx={{ position: 'absolute', top: -12, right: -12, width: 64, height: 64, borderRadius: '50%', bgcolor: `${color}10`, pointerEvents: 'none' }} />
+              <Typography variant="caption" sx={{ fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.06em', fontSize: '0.68rem' }}>{label}</Typography>
+              <Typography variant="h6" sx={{ fontWeight: 800, color, mt: 0.25, lineHeight: 1.1 }}>{value}</Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.72rem' }}>{sub}</Typography>
+            </Box>
+          ))}
+        </Box>
+      )}
 
       {/* ── Search & Filters ── */}
       <Card
@@ -3689,9 +3872,24 @@ const SalesPage = ({ mode = "sales" }) => {
                       </Box>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {tx.partyName}
-                      </Typography>
+                      {tx.partyId ? (
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {tx.partyName}
+                        </Typography>
+                      ) : (
+                        <Chip
+                          size="small"
+                          label={tx.partyName || (isSale ? "Cash & Carry" : "Cash Purchase")}
+                          sx={{
+                            fontWeight: 700,
+                            fontSize: "0.7rem",
+                            bgcolor: "rgba(16,185,129,0.08)",
+                            color: "success.dark",
+                            border: "1px solid rgba(16,185,129,0.22)",
+                            height: 22,
+                          }}
+                        />
+                      )}
                     </TableCell>
                     <TableCell>
                       {tx.dueDate ? (
@@ -3784,9 +3982,9 @@ const SalesPage = ({ mode = "sales" }) => {
                             color: tokens.primary,
                           },
                           {
-                            icon: <Printer size={16} />,
-                            title: "Print",
-                            onClick: () => triggerPrint(tx),
+                            icon: <Eye size={16} />,
+                            title: "Preview",
+                            onClick: () => { setPreviewTx(tx); setPreviewOpen(true); },
                             color: tokens.primary,
                           },
                           {
@@ -4077,6 +4275,21 @@ const SalesPage = ({ mode = "sales" }) => {
           }
         />
       </div>
+
+      {/* PDF capture ref — off-screen, not display:none so html2canvas can read it */}
+      <div style={{ position: "fixed", left: "-9999px", top: 0, opacity: 0, pointerEvents: "none", zIndex: -1 }}>
+        <InvoiceTemplate
+          ref={pdfRef}
+          transaction={previewTx}
+          business={currentBusiness}
+          paperSize={paperSize}
+          partyBalance={
+            previewTx
+              ? (parties.find((p) => p.id === previewTx.partyId)?.balance ?? 0)
+              : undefined
+          }
+        />
+      </div>
       {isSale && bulkPrintOpen && bulkPrintMergedList.length > 0 && (
         <div
           ref={bulkPrintRef}
@@ -4112,6 +4325,303 @@ const SalesPage = ({ mode = "sales" }) => {
           ))}
         </div>
       )}
+
+      {/* ── Preview dialog ── */}
+      <Dialog
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: tokens.radius.xl,
+            overflow: "hidden",
+            maxHeight: "92vh",
+            display: "flex",
+            flexDirection: "column",
+            boxShadow: "0 32px 80px rgba(0,0,0,0.22)",
+          },
+        }}
+      >
+        {/* Gradient header */}
+        <Box
+          sx={{
+            background: `linear-gradient(135deg, ${tokens.primaryDark} 0%, ${tokens.primaryLight} 100%)`,
+            px: 3,
+            py: 2.5,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 2,
+            flexShrink: 0,
+          }}
+        >
+          <Box
+            sx={{
+              p: 1,
+              borderRadius: tokens.radius.md,
+              bgcolor: "rgba(255,255,255,0.15)",
+              display: "flex",
+              alignItems: "center",
+              mt: 0.5,
+              flexShrink: 0,
+            }}
+          >
+            <Eye size={18} color="white" />
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography
+              variant="overline"
+              sx={{
+                color: "rgba(255,255,255,0.72)",
+                fontWeight: 700,
+                fontSize: "0.65rem",
+                letterSpacing: "0.1em",
+                lineHeight: 1,
+              }}
+            >
+              {isSale ? "Invoice Preview" : "Bill Preview"}
+            </Typography>
+            <Typography
+              variant="h6"
+              sx={{
+                color: "white",
+                fontWeight: 800,
+                mt: 0.5,
+                fontSize: "1.05rem",
+                fontFamily: "monospace",
+                letterSpacing: "0.02em",
+              }}
+            >
+              {previewTx?.invoiceNumber || "—"}
+            </Typography>
+            <Box
+              sx={{
+                display: "flex",
+                gap: 2,
+                mt: 0.75,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
+              {previewTx?.partyName && (
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                  <User size={12} color="rgba(255,255,255,0.65)" />
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "rgba(255,255,255,0.85)", fontWeight: 600 }}
+                  >
+                    {previewTx.partyName}
+                  </Typography>
+                </Box>
+              )}
+              {previewTx?.date && (
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                  <Calendar size={12} color="rgba(255,255,255,0.65)" />
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "rgba(255,255,255,0.85)", fontWeight: 600 }}
+                  >
+                    {formatDate(previewTx.date)}
+                  </Typography>
+                </Box>
+              )}
+              {previewTx?.totalAmount != null && (
+                <Box
+                  sx={{
+                    px: 1.25,
+                    py: 0.25,
+                    bgcolor: "rgba(255,255,255,0.18)",
+                    borderRadius: "100px",
+                    border: "1px solid rgba(255,255,255,0.25)",
+                  }}
+                >
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "white", fontWeight: 800, fontSize: "0.8rem" }}
+                  >
+                    ₹{previewTx.totalAmount.toFixed(2)}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Box>
+          <IconButton
+            onClick={() => setPreviewOpen(false)}
+            size="small"
+            sx={{
+              color: "rgba(255,255,255,0.75)",
+              mt: -0.5,
+              mr: -0.5,
+              "&:hover": {
+                color: "white",
+                bgcolor: "rgba(255,255,255,0.12)",
+              },
+            }}
+          >
+            <X size={18} />
+          </IconButton>
+        </Box>
+
+        {/* Toolbar */}
+        <Box
+          sx={{
+            px: 2.5,
+            py: 1.25,
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+            borderBottom: "1px solid rgba(0,0,0,0.08)",
+            bgcolor: "rgba(0,0,0,0.015)",
+            flexShrink: 0,
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Typography
+              variant="body2"
+              sx={{
+                fontWeight: 700,
+                color: "text.secondary",
+                whiteSpace: "nowrap",
+                fontSize: "0.8rem",
+              }}
+            >
+              Page Size
+            </Typography>
+            <TextField
+              select
+              size="small"
+              value={paperSize}
+              onChange={(e) => setPaperSize(e.target.value)}
+              sx={{
+                minWidth: 84,
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: tokens.radius.sm,
+                },
+              }}
+            >
+              {["A4", "A5", "Letter", "Legal", "Thermal 80mm", "Thermal 58mm"].map((s) => (
+                <MenuItem key={s} value={s}>
+                  {s}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Box>
+          <Box sx={{ flex: 1 }} />
+          <Button
+            startIcon={shareLoading ? null : <Share2 size={15} />}
+            endIcon={!shareLoading && <ChevronDown size={12} />}
+            onClick={(e) => setShareMenuAnchor(e.currentTarget)}
+            disabled={shareLoading}
+            size="small"
+            variant="outlined"
+            sx={{
+              fontWeight: 700,
+              textTransform: "none",
+              borderRadius: tokens.radius.sm,
+              color: "#16a34a",
+              borderColor: "rgba(22,163,74,0.28)",
+              "&:hover": {
+                bgcolor: "rgba(22,163,74,0.06)",
+                borderColor: "rgba(22,163,74,0.5)",
+              },
+              px: 1.5,
+            }}
+          >
+            {shareLoading ? "Sharing…" : "Share"}
+          </Button>
+          <Menu
+            anchorEl={shareMenuAnchor}
+            open={Boolean(shareMenuAnchor)}
+            onClose={() => setShareMenuAnchor(null)}
+            transformOrigin={{ horizontal: "right", vertical: "top" }}
+            anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
+            PaperProps={{ elevation: 6, sx: { borderRadius: 2, mt: 0.5, minWidth: 180 } }}
+          >
+            <MenuItem
+              onClick={() => { shareAsPDF(); setShareMenuAnchor(null); }}
+              sx={{ gap: 1.5, py: 1.25 }}
+            >
+              <ListItemIcon sx={{ minWidth: "unset" }}><FileDown size={16} /></ListItemIcon>
+              <ListItemText primary="Share as PDF" primaryTypographyProps={{ fontSize: "0.875rem", fontWeight: 600 }} />
+            </MenuItem>
+            <MenuItem
+              onClick={() => { shareAsImage(); setShareMenuAnchor(null); }}
+              sx={{ gap: 1.5, py: 1.25 }}
+            >
+              <ListItemIcon sx={{ minWidth: "unset" }}><ImageDown size={16} /></ListItemIcon>
+              <ListItemText primary="Share as Image" primaryTypographyProps={{ fontSize: "0.875rem", fontWeight: 600 }} />
+            </MenuItem>
+          </Menu>
+          <Tooltip title="Download as PDF">
+            <Button
+              startIcon={pdfLoading ? null : <FileDown size={15} />}
+              onClick={downloadInvoicePDF}
+              disabled={pdfLoading}
+              size="small"
+              variant="outlined"
+              sx={{
+                fontWeight: 700,
+                textTransform: "none",
+                borderRadius: tokens.radius.sm,
+                color: "#7c3aed",
+                borderColor: "rgba(124,58,237,0.28)",
+                "&:hover": {
+                  bgcolor: "rgba(124,58,237,0.06)",
+                  borderColor: "rgba(124,58,237,0.5)",
+                },
+                px: 1.5,
+              }}
+            >
+              {pdfLoading ? "Generating…" : "PDF"}
+            </Button>
+          </Tooltip>
+          <GradientButton
+            tokens={tokens}
+            startIcon={<Printer size={15} />}
+            onClick={() => {
+              setPreviewOpen(false);
+              triggerPrint(previewTx);
+            }}
+            size="small"
+            sx={{ px: 2.5 }}
+          >
+            Print
+          </GradientButton>
+        </Box>
+
+        {/* Scrollable preview area */}
+        <Box
+          sx={{
+            flex: 1,
+            overflow: "auto",
+            bgcolor: "#e8eaed",
+            p: 3,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "flex-start",
+          }}
+        >
+          <Box
+            sx={{
+              filter: "drop-shadow(0 8px 32px rgba(0,0,0,0.18))",
+            }}
+          >
+            <div style={{ zoom: 0.72 }}>
+              <InvoiceTemplate
+                transaction={previewTx}
+                business={currentBusiness}
+                paperSize={paperSize}
+                partyBalance={
+                  previewTx
+                    ? (parties.find((p) => p.id === previewTx.partyId)
+                        ?.balance ?? 0)
+                    : undefined
+                }
+              />
+            </div>
+          </Box>
+        </Box>
+      </Dialog>
 
       <Snackbar
         open={snack.open}

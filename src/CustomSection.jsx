@@ -9,6 +9,7 @@ import { useParams } from 'react-router-dom';
 import { useConfig } from './ConfigContext';
 import { useBusiness } from './BusinessContext';
 import { useData } from './DataContext';
+import { useDialog } from './DialogContext';
 import DataGrid from './DataGrid';
 import { useReactToPrint } from 'react-to-print';
 import SectionPrintTemplate from './SectionPrintTemplate';
@@ -25,6 +26,7 @@ const CustomSection = () => {
   const { config } = useConfig();
   const { currentBusiness } = useBusiness();
   const { getItems, addItem, updateItem, deleteItem } = useData();
+  const { confirm } = useDialog();
 
   const section = config.customSections?.find(s => s.id === sectionId);
 
@@ -332,7 +334,10 @@ const CustomSection = () => {
               <IconButton size="small" onClick={() => handleEditRecord(tab, row)}>
                 <Edit2 size={18} />
               </IconButton>
-              <IconButton size="small" color="error" onClick={() => deleteItem('customSectionRecords', row.id)}>
+              <IconButton size="small" color="error" onClick={async () => {
+                const ok = await confirm({ title: 'Delete Record', message: 'Delete this record? This action cannot be undone.', confirmLabel: 'Delete', variant: 'danger' });
+                if (ok) deleteItem('customSectionRecords', row.id);
+              }}>
                 <Trash2 size={18} />
               </IconButton>
             </Stack>

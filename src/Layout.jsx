@@ -5,7 +5,7 @@ import {
   Box, Drawer, AppBar, Toolbar, List, Typography, Divider, IconButton,
   ListItem, ListItemButton, ListItemIcon, ListItemText, Avatar, Menu, MenuItem,
   Tooltip, useTheme, useMediaQuery, Button, Dialog, DialogTitle, DialogContent,
-  DialogActions, TextField, Alert
+  DialogActions, TextField, Alert, alpha, Popover
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -24,17 +24,23 @@ import {
   Eye,
   FileSearch,
   RotateCcw,
+  CornerUpLeft,
   Truck,
   BookOpen,
+  CalendarRange,
   ScanLine,
   LogOut,
   DollarSign,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useBusiness } from './BusinessContext';
 import { useAuth } from './AuthContext';
 import { useConfig } from './ConfigContext';
+import { useFinancialYear } from './FinancialYearContext';
 import SectionIcon from './SectionIcon';
+import { useDialog } from './DialogContext';
 
 const drawerWidth = 240;
 
@@ -121,7 +127,10 @@ const Layout = ({ children }) => {
   const { currentBusiness, businesses, switchBusiness } = useBusiness();
   const { logout, currentUser, isAdmin } = useAuth();
   const { config } = useConfig();
+  const { confirm } = useDialog();
   const { getItems } = useData();
+  const { activeFYLabel, availableFYs, setActiveFY, currentFY } = useFinancialYear();
+  const [fyMenuAnchor, setFyMenuAnchor] = useState(null);
   const [globalScanOpen, setGlobalScanOpen] = useState(false);
   const barcodeScanEnabled = !!config.features?.barcode;
 
@@ -157,6 +166,7 @@ const Layout = ({ children }) => {
       items: [
         ...(config.features?.estimates ? [{ text: 'Estimates', icon: <FileSearch size={18} />, path: '/estimates' }] : []),
         ...(config.features?.creditNotes ? [{ text: 'Credit Notes', icon: <RotateCcw size={18} />, path: '/credit-notes' }] : []),
+        ...(config.features?.debitNotes ? [{ text: 'Debit Notes', icon: <CornerUpLeft size={18} />, path: '/debit-notes' }] : []),
         ...(config.features?.deliveryNotes ? [{ text: 'Delivery Notes', icon: <Truck size={18} />, path: '/delivery-notes' }] : []),
       ],
     },
@@ -432,6 +442,181 @@ const Layout = ({ children }) => {
             </Typography>
           </Box>
 
+          {/* Financial Year selector */}
+          {(() => {
+            const isAll = activeFYLabel === 'all';
+            const isCurrentFY = !isAll && activeFYLabel === currentFY.label;
+            return (
+              <>
+                <Box
+                  onClick={(e) => setFyMenuAnchor(e.currentTarget)}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 0.75,
+                    mr: 1,
+                    pl: 1.25,
+                    pr: 1,
+                    py: 0.5,
+                    borderRadius: 1.5,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    border: '1.5px solid',
+                    transition: 'all 0.15s ease',
+                    ...(isAll ? {
+                      bgcolor: 'action.hover',
+                      borderColor: 'divider',
+                      '&:hover': { bgcolor: 'action.selected', borderColor: 'text.disabled' },
+                    } : {
+                      bgcolor: alpha(theme.palette.primary.main, 0.08),
+                      borderColor: alpha(theme.palette.primary.main, 0.3),
+                      '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.14), borderColor: alpha(theme.palette.primary.main, 0.5) },
+                    }),
+                  }}
+                >
+                  <CalendarRange
+                    size={13}
+                    style={{ color: isAll ? theme.palette.text.secondary : theme.palette.primary.main, flexShrink: 0 }}
+                  />
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontWeight: 700,
+                      fontSize: '0.72rem',
+                      whiteSpace: 'nowrap',
+                      color: isAll ? 'text.secondary' : 'primary.main',
+                      letterSpacing: '0.01em',
+                    }}
+                  >
+                    {isAll ? 'All Time' : activeFYLabel}
+                  </Typography>
+                  <ChevronDown size={11} style={{ color: isAll ? theme.palette.text.disabled : theme.palette.primary.main, flexShrink: 0 }} />
+                </Box>
+
+                <Popover
+                  anchorEl={fyMenuAnchor}
+                  open={Boolean(fyMenuAnchor)}
+                  onClose={() => setFyMenuAnchor(null)}
+                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                  transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                  PaperProps={{
+                    elevation: 6,
+                    sx: {
+                      mt: 0.75,
+                      minWidth: 220,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      overflow: 'hidden',
+                    }
+                  }}
+                >
+                  {/* Header */}
+                  <Box sx={{ px: 2, pt: 1.75, pb: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <CalendarRange size={14} style={{ color: theme.palette.primary.main }} />
+                      <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.7rem', letterSpacing: '0.08em', color: 'text.secondary', textTransform: 'uppercase' }}>
+                        Financial Year
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  {/* FY list */}
+                  <Box sx={{ py: 0.5, maxHeight: 260, overflowY: 'auto' }}>
+                    {availableFYs.map((fy) => {
+                      const isActive = activeFYLabel === fy.label;
+                      const isCurr = fy.label === currentFY.label;
+                      return (
+                        <Box
+                          key={fy.label}
+                          onClick={() => { setActiveFY(fy.label); setFyMenuAnchor(null); }}
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            px: 2,
+                            py: 0.875,
+                            cursor: 'pointer',
+                            transition: 'background 0.1s',
+                            bgcolor: isActive ? alpha(theme.palette.primary.main, 0.08) : 'transparent',
+                            '&:hover': {
+                              bgcolor: isActive
+                                ? alpha(theme.palette.primary.main, 0.12)
+                                : alpha(theme.palette.text.primary, 0.04),
+                            },
+                          }}
+                        >
+                          <Box>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                fontWeight: isActive ? 700 : 500,
+                                fontSize: '0.8125rem',
+                                color: isActive ? 'primary.main' : 'text.primary',
+                                lineHeight: 1.3,
+                              }}
+                            >
+                              {fy.label}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: '0.68rem' }}>
+                              {fy.start} → {fy.end}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, ml: 1.5 }}>
+                            {isCurr && (
+                              <Box sx={{
+                                px: 0.75, py: 0.2,
+                                borderRadius: 0.75,
+                                bgcolor: alpha(theme.palette.success.main, 0.12),
+                                border: '1px solid',
+                                borderColor: alpha(theme.palette.success.main, 0.3),
+                              }}>
+                                <Typography sx={{ fontSize: '0.6rem', fontWeight: 700, color: 'success.main', lineHeight: 1 }}>
+                                  Current
+                                </Typography>
+                              </Box>
+                            )}
+                            {isActive && <Check size={14} style={{ color: theme.palette.primary.main, flexShrink: 0 }} />}
+                          </Box>
+                        </Box>
+                      );
+                    })}
+                  </Box>
+
+                  {/* All Time */}
+                  <Box sx={{ borderTop: '1px solid', borderColor: 'divider', py: 0.5 }}>
+                    <Box
+                      onClick={() => { setActiveFY('all'); setFyMenuAnchor(null); }}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        px: 2,
+                        py: 0.875,
+                        cursor: 'pointer',
+                        bgcolor: isAll ? alpha(theme.palette.text.primary, 0.06) : 'transparent',
+                        '&:hover': { bgcolor: alpha(theme.palette.text.primary, 0.04) },
+                      }}
+                    >
+                      <Box>
+                        <Typography
+                          variant="body2"
+                          sx={{ fontWeight: isAll ? 700 : 500, fontSize: '0.8125rem', color: isAll ? 'text.primary' : 'text.secondary' }}
+                        >
+                          All Time
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: '0.68rem' }}>
+                          No date filter applied
+                        </Typography>
+                      </Box>
+                      {isAll && <Check size={14} style={{ color: theme.palette.text.secondary, flexShrink: 0 }} />}
+                    </Box>
+                  </Box>
+                </Popover>
+              </>
+            );
+          })()}
+
           {/* Barcode scan button */}
           {barcodeScanEnabled && (
             <Tooltip title="Scan barcode → Sales">
@@ -491,7 +676,16 @@ const Layout = ({ children }) => {
               </Typography>
             </Box>
             <MenuItem
-              onClick={() => { logout(); setUserMenuAnchor(null); }}
+              onClick={async () => {
+                setUserMenuAnchor(null);
+                const ok = await confirm({
+                  title: 'Sign Out',
+                  message: 'Are you sure you want to sign out? Any unsaved changes will be lost.',
+                  confirmLabel: 'Sign Out',
+                  variant: 'warning',
+                });
+                if (ok) logout();
+              }}
               sx={{ mt: 0.5, color: 'error.main', '& .MuiListItemIcon-root': { color: 'error.main' } }}
             >
               <ListItemIcon><LogOut size={16} /></ListItemIcon>

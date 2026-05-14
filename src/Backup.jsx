@@ -7,8 +7,10 @@ import {
 import { Download, Upload, CloudUpload, CloudDownload, AlertCircle, Folder } from 'lucide-react';
 import { useData } from './DataContext';
 import { useConfig } from './ConfigContext';
+import { useDialog } from './DialogContext';
 
 const Backup = () => {
+  const { confirm } = useDialog();
   const {
     data,
     allBusinessData,
@@ -77,7 +79,8 @@ const Backup = () => {
   const importData = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (!window.confirm('This will overwrite current data. Are you sure?')) return;
+    const ok = await confirm({ title: 'Overwrite Data', message: 'This will overwrite all current data with the imported file. This action cannot be undone. Are you sure?', confirmLabel: 'Overwrite', variant: 'danger' });
+    if (!ok) return;
 
     setLoading(true);
     setMessage({ type: '', text: '' });
@@ -155,7 +158,8 @@ const Backup = () => {
   };
 
   const handleRestoreFromOnline = async () => {
-    if (!window.confirm('This will replace your local (IndexedDB) data with the last online backup. Continue?')) return;
+    const ok = await confirm({ title: 'Restore from Online Backup', message: 'This will replace your local data with the last online backup. Any unsaved local changes will be lost.', confirmLabel: 'Restore', variant: 'warning' });
+    if (!ok) return;
     setOnlineLoading(true);
     setMessage({ type: '', text: '' });
     try {

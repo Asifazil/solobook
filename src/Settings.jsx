@@ -2,28 +2,28 @@ import React, { useState, useEffect } from 'react';
 import { 
   Box, Typography, Card, CardContent, TextField, Button, Grid, 
   Divider, List, ListItem, ListItemText, IconButton, Alert, Avatar,
-  FormControl, InputLabel, Select, MenuItem, Chip, Dialog, DialogTitle,
-  DialogContent, DialogContentText, DialogActions, FormControlLabel, Switch
+  FormControl, InputLabel, Select, MenuItem, Chip, FormControlLabel, Switch
 } from '@mui/material';
-import { Save, Plus, Trash2, Building2, Check, Image, QrCode, FileSearch, RotateCcw, Truck, BookOpen } from 'lucide-react';
+import { Save, Plus, Trash2, Building2, Check, Image, QrCode, FileSearch, RotateCcw, CornerUpLeft, Truck, BookOpen, CalendarRange, Printer } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
 import { useThemeContext } from './ThemeContext';
 import { useConfig } from './ConfigContext';
 import { useData } from './DataContext';
+import { useDialog } from './DialogContext';
 
 const SettingsPage = () => {
   const { currentBusiness, businesses, switchBusiness, setCurrentBusinessId } = useBusiness();
   const { mode, primaryColor, updateTheme } = useThemeContext();
   const { config, saveConfig } = useConfig();
   const { addBusiness, updateBusiness, deleteBusiness: deleteBusinessFromData, deleteItem, getItems } = useData();
+  const { confirm, showAlert } = useDialog();
   const [uploading, setUploading] = useState({ logo: false, qrCode: false });
   const [formData, setFormData] = useState({
     name: '', gstNumber: '', address: '', phone: '', email: '', state: '',
-    username: '', password: '', confirmPassword: ''
+    username: '', password: '', confirmPassword: '', fyStartMonth: 3
   });
   const [msg, setMsg] = useState({ type: '', text: '' });
   const [isNew, setIsNew] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, businessId: null, businessName: '' });
   const [featuresSaving, setFeaturesSaving] = useState(false);
 
   const handleFeatureToggle = async (featureKey, checked) => {
@@ -52,7 +52,8 @@ const SettingsPage = () => {
         state: currentBusiness.state || '',
         username: currentBusiness.username || '',
         password: '',
-        confirmPassword: ''
+        confirmPassword: '',
+        fyStartMonth: currentBusiness.fyStartMonth ?? 3
       });
     }
   }, [currentBusiness, isNew]);
@@ -149,7 +150,8 @@ const SettingsPage = () => {
           address: formData.address || '',
           phone: formData.phone || '',
           email: formData.email || '',
-          state: formData.state || 'Unknown'
+          state: formData.state || 'Unknown',
+          fyStartMonth: Number(formData.fyStartMonth ?? 3)
         };
         
         const id = await addBusiness(businessData);
@@ -167,7 +169,8 @@ const SettingsPage = () => {
           address: formData.address || '',
           phone: formData.phone || '',
           email: formData.email || '',
-          state: formData.state || 'Unknown'
+          state: formData.state || 'Unknown',
+          fyStartMonth: Number(formData.fyStartMonth ?? 3)
         };
         
         const saved = await updateBusiness(currentBusiness.id, updateData);
@@ -184,22 +187,22 @@ const SettingsPage = () => {
     setTimeout(() => setMsg({ type: '', text: '' }), 4000);
   };
 
-  const handleDeleteBusiness = (id) => {
+  const handleDeleteBusiness = async (id) => {
     const bizToDelete = businesses.find(b => b.id === id);
     if (!bizToDelete) return;
 
     if (businesses.length <= 1) {
-      setMsg({ type: 'error', text: 'You need at least one business at all times.' });
-      setTimeout(() => setMsg({ type: '', text: '' }), 4000);
+      await showAlert({ title: 'Cannot delete', message: 'You need at least one business at all times.', variant: 'warning' });
       return;
     }
-    
-    setDeleteConfirm({ open: true, businessId: id, businessName: bizToDelete.name });
-  };
 
-  const confirmDeleteBusiness = async () => {
-    const id = deleteConfirm.businessId;
-    if (!id) return;
+    const ok = await confirm({
+      title: `Delete "${bizToDelete.name}"`,
+      message: `EXTREME CAUTION: This will permanently delete "${bizToDelete.name}" along with ALL its parties, items, invoices, and transactions. This cannot be undone.`,
+      confirmLabel: 'Delete Business',
+      variant: 'danger',
+    });
+    if (!ok) return;
 
     try {
       const otherBusiness = businesses.find(b => b.id !== id);
@@ -240,7 +243,6 @@ const SettingsPage = () => {
       setMsg({ type: 'error', text: 'Deletion failed: ' + (err.message || 'Unknown error') });
     }
     setTimeout(() => setMsg({ type: '', text: '' }), 4000);
-    setDeleteConfirm({ open: false, businessId: null, businessName: '' });
   };
 
   return (
@@ -307,6 +309,21 @@ const SettingsPage = () => {
                       value={formData.address}
                       onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                     />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <FormControl fullWidth>
+                      <InputLabel>Financial Year Start</InputLabel>
+                      <Select
+                        value={formData.fyStartMonth}
+                        label="Financial Year Start"
+                        onChange={(e) => setFormData({ ...formData, fyStartMonth: e.target.value })}
+                      >
+                        <MenuItem value={3}>April (India standard)</MenuItem>
+                        <MenuItem value={0}>January (Calendar year)</MenuItem>
+                        <MenuItem value={6}>July</MenuItem>
+                        <MenuItem value={9}>October</MenuItem>
+                      </Select>
+                    </FormControl>
                   </Grid>
                   {!isNew && (
                     <>
@@ -538,6 +555,25 @@ const SettingsPage = () => {
                 <FormControlLabel
                   control={
                     <Switch
+                      checked={!!config.features?.debitNotes}
+                      onChange={(e) => handleFeatureToggle('debitNotes', e.target.checked)}
+                      color="primary"
+                      disabled={featuresSaving}
+                    />
+                  }
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <CornerUpLeft size={18} />
+                      <span>Debit Notes</span>
+                    </Box>
+                  }
+                />
+                <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4, mt: 0.25 }}>Purchase returns / debit memos</Typography>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <FormControlLabel
+                  control={
+                    <Switch
                       checked={!!config.features?.deliveryNotes}
                       onChange={(e) => handleFeatureToggle('deliveryNotes', e.target.checked)}
                       color="primary"
@@ -571,6 +607,41 @@ const SettingsPage = () => {
                   }
                 />
                 <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4, mt: 0.25 }}>Journal entries</Typography>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+      </Box>
+
+      {/* Print & Invoice */}
+      <Box sx={{ mt: 6 }}>
+        <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>Print &amp; Invoice</Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>Default settings used when printing invoices and documents.</Typography>
+        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+          <CardContent sx={{ p: 4 }}>
+            <Grid container spacing={3} alignItems="center">
+              <Grid item xs={12} sm={6} md={4}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+                  <Printer size={18} />
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Default Paper Size</Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                  Pre-selected paper size when printing. Can be changed per document.
+                </Typography>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Paper Size</InputLabel>
+                  <Select
+                    value={config.defaultPaperSize || 'A4'}
+                    label="Paper Size"
+                    onChange={async (e) => {
+                      await saveConfig({ ...config, defaultPaperSize: e.target.value });
+                    }}
+                  >
+                    {['A4', 'A5', 'Letter', 'Legal', 'Thermal 80mm', 'Thermal 58mm'].map(s => (
+                      <MenuItem key={s} value={s}>{s}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
               </Grid>
             </Grid>
           </CardContent>
@@ -627,25 +698,6 @@ const SettingsPage = () => {
         </Grid>
       </Box>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteConfirm.open} onClose={() => setDeleteConfirm({ open: false, businessId: null, businessName: '' })}>
-        <DialogTitle>Confirm Deletion</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            <strong>EXTREME CAUTION:</strong> Deleting "{deleteConfirm.businessName}" will permanently remove ALL associated parties, items, and transactions.
-            <br /><br />
-            Are you absolutely sure?
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteConfirm({ open: false, businessId: null, businessName: '' })}>
-            Cancel
-          </Button>
-          <Button onClick={confirmDeleteBusiness} color="error" variant="contained">
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 };
