@@ -297,17 +297,16 @@ export const DataProvider = ({ children }) => {
 
     // For sales/purchases, validate required fields
     if (table === 'sales' || table === 'purchases') {
-      if (!item.partyId || !item.items || !Array.isArray(item.items) || item.items.length === 0) {
-        console.error(`❌ Invalid ${table} entry - missing required fields:`, {
-          hasPartyId: !!item.partyId,
+      if (!item.items || !Array.isArray(item.items) || item.items.length === 0) {
+        console.error(`❌ Invalid ${table} entry - missing items:`, {
           hasItems: !!item.items,
           itemsLength: item.items?.length || 0
         });
         return false;
       }
 
-      // Validate items array
-      const validItems = item.items.filter(i => i.itemId && Number(i.qty) > 0);
+      // Validate items array — allow name-only items (no itemId) for ad-hoc entries
+      const validItems = item.items.filter(i => (i.itemId || i.name?.trim()) && Number(i.qty) > 0);
       if (validItems.length === 0) {
         console.error(`❌ Invalid ${table} entry - no valid items:`, item);
         return false;

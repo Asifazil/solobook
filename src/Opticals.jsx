@@ -13,6 +13,7 @@ import {
 import { useBusiness } from './BusinessContext';
 import { useConfig } from './ConfigContext';
 import { useData } from './DataContext';
+import PartySelect from './PartySelect';
 import { useDialog } from './DialogContext';
 import DataGrid from './DataGrid';
 import { useReactToPrint } from 'react-to-print';
@@ -498,15 +499,12 @@ const OpticalsPage = () => {
               <Box sx={{ p: 2.5 }}>
                 <Grid container spacing={2.5}>
                   <Grid size={{ xs: 12, sm: 6 }}>
-                    <Autocomplete
-                      freeSolo options={parties.map(p => p.name)} fullWidth value={formData.patientName}
-                      onChange={(_, v) => setFormData(prev => ({ ...prev, patientName: v || '' }))}
-                      onInputChange={(_, v) => setFormData(prev => ({ ...prev, patientName: v }))}
-                      renderInput={(params) => (
-                        <TextField {...params} label="Patient Name *" size="small"
-                          InputProps={{ ...params.InputProps, startAdornment: <User size={15} style={{ marginRight: 8, color: '#0d9488' }} /> }}
-                        />
-                      )}
+                    <PartySelect
+                      options={parties}
+                      value={formData.patientName}
+                      onChange={(v) => setFormData(prev => ({ ...prev, patientName: v }))}
+                      label="Patient Name *"
+                      nameOnly
                     />
                   </Grid>
                   <Grid size={{ xs: 12, sm: 6 }}>
@@ -743,15 +741,12 @@ const OpticalsPage = () => {
               <Box sx={{ p: 2.5 }}>
                 <Grid container spacing={2.5}>
                   <Grid size={{ xs: 12, sm: 6 }}>
-                    <Autocomplete
-                      freeSolo options={parties.map(p => p.name)} fullWidth value={orderForm.patientName}
-                      onChange={(_, v) => setOrderForm(prev => ({ ...prev, patientName: v || '' }))}
-                      onInputChange={(_, v) => setOrderForm(prev => ({ ...prev, patientName: v }))}
-                      renderInput={(params) => (
-                        <TextField {...params} label="Customer Name *" size="small"
-                          InputProps={{ ...params.InputProps, startAdornment: <User size={15} style={{ marginRight: 8, color: '#0d9488' }} /> }}
-                        />
-                      )}
+                    <PartySelect
+                      options={parties}
+                      value={orderForm.patientName}
+                      onChange={(v) => setOrderForm(prev => ({ ...prev, patientName: v }))}
+                      label="Customer Name *"
+                      nameOnly
                     />
                   </Grid>
                   <Grid size={{ xs: 12, sm: 6 }}>

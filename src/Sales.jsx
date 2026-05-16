@@ -79,6 +79,8 @@ import { useLocation } from "react-router-dom";
 import InvoiceTemplate from "./InvoiceTemplate";
 import BarcodeScanner from "./BarcodeScanner";
 import { useDialog } from "./DialogContext";
+import PartySelect from "./PartySelect";
+import ItemSelect from "./ItemSelect";
 
 /* ─── Design tokens (derived from global MUI theme) ─── */
 const getThemeTokens = (theme) => {
@@ -382,7 +384,7 @@ const SalesPage = ({ mode = "sales" }) => {
         );
       })();
     if (found) {
-      const price = Number(isSale ? found.salePrice : found.purchasePrice) || 0;
+      const price = Number(isSale ? (found.salePrice ?? found.price) : (found.purchasePrice ?? found.price)) || 0;
       const taxRate = Number(found.taxRate) || 0;
       setView("create");
       setEditId(null);
@@ -428,25 +430,27 @@ const SalesPage = ({ mode = "sales" }) => {
       });
       return;
     }
+    const price =
+      Number(isSale ? (foundItem.salePrice ?? foundItem.price) : (foundItem.purchasePrice ?? foundItem.price)) || 0;
+    const taxRate = Number(foundItem.taxRate) || 0;
+    const newRow = {
+      itemId: foundItem.id,
+      name: foundItem.name,
+      qty: 1,
+      price,
+      taxRate,
+      discountPercent: 0,
+      total: price * (1 + taxRate / 100),
+    };
     const emptyIdx = items.findIndex((i) => !i.itemId);
     if (emptyIdx >= 0) {
-      updateItemRow(emptyIdx, "itemId", foundItem.id);
+      setItems((prev) => {
+        const updated = [...prev];
+        updated[emptyIdx] = { ...updated[emptyIdx], ...newRow };
+        return updated;
+      });
     } else {
-      const price =
-        Number(foundItem[isSale ? "salePrice" : "purchasePrice"]) || 0;
-      const taxRate = Number(foundItem.taxRate) || 0;
-      setItems((prev) => [
-        ...prev,
-        {
-          itemId: foundItem.id,
-          name: foundItem.name,
-          qty: 1,
-          price,
-          taxRate,
-          discountPercent: 0,
-          total: price * (1 + taxRate / 100),
-        },
-      ]);
+      setItems((prev) => [...prev, newRow]);
     }
     setSnack({
       open: true,
@@ -765,9 +769,10 @@ const SalesPage = ({ mode = "sales" }) => {
     if (field === "itemId") {
       const selected = stockItems.find((i) => i.id === value);
       if (selected) {
-        item.name = selected.name;
-        item.price = isSale ? selected.salePrice : selected.purchasePrice;
-        item.taxRate = selected.taxRate;
+        item.name = selected.name || '';
+        item.price = Number(isSale ? (selected.salePrice ?? selected.price) : (selected.purchasePrice ?? selected.price)) || 0;
+        item.taxRate = Number(selected.taxRate) || 0;
+        item.discountPercent = 0;
       }
     }
     const qty = Number(item.qty) || 0;
@@ -922,8 +927,10 @@ const SalesPage = ({ mode = "sales" }) => {
         )
         .map((item) => ({
           ...item,
-          taxRate: currentNoGST ? 0 : item.taxRate,
-          discountPercent: item.discountPercent ?? 0,
+          qty: Number(item.qty) || 0,
+          price: Number(item.price) || 0,
+          taxRate: currentNoGST ? 0 : (Number(item.taxRate) || 0),
+          discountPercent: Number(item.discountPercent) || 0,
         }));
       if (!cleanedItems.length) {
         await showAlert({ title: "No items added", message: "Please add at least one item with a valid quantity and price.", variant: "warning" });
@@ -983,18 +990,8 @@ const SalesPage = ({ mode = "sales" }) => {
             await updateItem("parties", oldTx.partyId, {
               balance: oldParty.balance + oldBalanceRollback,
             });
-          for (const item of oldTx.items) {
-            if (item.itemId) {
-              const stockItem = currentStockItems.find(
-                (i) => i.id === item.itemId,
-              );
-              if (stockItem)
-                await updateItem("items", item.itemId, {
-                  stock:
-                    stockItem.stock + (currentIsSale ? item.qty : -item.qty),
-                });
-            }
-          }
+          // Stock rollback is deferred — handled together with the new items
+          // as a net delta below to avoid stale-snapshot double-counting.
         }
       }
 
@@ -1053,13 +1050,44 @@ const SalesPage = ({ mode = "sales" }) => {
         });
       }
 
-      for (const item of transactionData.items) {
-        if (item.itemId) {
-          const stockItem = currentStockItems.find((i) => i.id === item.itemId);
-          if (stockItem)
-            await updateItem("items", item.itemId, {
-              stock: stockItem.stock + (currentIsSale ? -item.qty : item.qty),
-            });
+      if (currentEditId && editedOldTx) {
+        // Compute net stock delta: rollback old items + apply new items in one pass.
+        // Using a snapshot (currentStockItems) is safe because each itemId is only
+        // touched once — no double-counting from sequential reads of stale state.
+        const stockDeltas = {};
+        for (const item of editedOldTx.items) {
+          if (item.itemId) {
+            const q = Number(item.qty) || 0;
+            stockDeltas[item.itemId] =
+              (stockDeltas[item.itemId] || 0) + (currentIsSale ? q : -q);
+          }
+        }
+        for (const item of transactionData.items) {
+          if (item.itemId) {
+            const q = Number(item.qty) || 0;
+            stockDeltas[item.itemId] =
+              (stockDeltas[item.itemId] || 0) + (currentIsSale ? -q : q);
+          }
+        }
+        for (const [itemId, delta] of Object.entries(stockDeltas)) {
+          if (delta !== 0) {
+            const stockItem = currentStockItems.find((i) => i.id === itemId);
+            if (stockItem)
+              await updateItem("items", itemId, {
+                stock: stockItem.stock + delta,
+              });
+          }
+        }
+      } else {
+        for (const item of transactionData.items) {
+          if (item.itemId) {
+            const q = Number(item.qty) || 0;
+            const stockItem = currentStockItems.find((i) => i.id === item.itemId);
+            if (stockItem)
+              await updateItem("items", item.itemId, {
+                stock: stockItem.stock + (currentIsSale ? -q : q),
+              });
+          }
         }
       }
 
@@ -1118,10 +1146,11 @@ const SalesPage = ({ mode = "sales" }) => {
         });
       for (const item of tx.items) {
         if (item.itemId) {
+          const q = Number(item.qty) || 0;
           const stockItem = getItems("items").find((i) => i.id === item.itemId);
           if (stockItem)
             updateItem("items", item.itemId, {
-              stock: stockItem.stock + (isSale ? item.qty : -item.qty),
+              stock: stockItem.stock + (isSale ? q : -q),
             });
         }
       }
@@ -1854,17 +1883,16 @@ const SalesPage = ({ mode = "sales" }) => {
               <CardContent sx={{ p: 2.5 }}>
                 <Grid container spacing={2}>
                   <Grid size={{ xs: 12, sm: 7 }}>
-                    <Autocomplete
+                    <ItemSelect
                       options={stockItems}
-                      getOptionLabel={(o) => o.name || ""}
                       value={pfProduct}
-                      onChange={(_e, v) => {
+                      onChange={(v) => {
+                        if (typeof v === 'string' || !v) { setPfProduct(null); return; }
                         setPfProduct(v);
                         if (v) setPfCustomers((prev) => prev.map((r) => ({ ...r, price: r.price || (v.salePrice ?? "") })));
                       }}
-                      renderInput={(params) => (
-                        <TextField {...params} label="Product *" placeholder="Search or select a product…" size="small" sx={inputSx} />
-                      )}
+                      placeholder="Search or select a product…"
+                      sx={inputSx}
                     />
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3 }}>
@@ -2029,15 +2057,13 @@ const SalesPage = ({ mode = "sales" }) => {
                               {idx + 1}
                             </TableCell>
                             <TableCell sx={{ py: 1.25 }}>
-                              <Autocomplete
+                              <PartySelect
                                 options={parties}
-                                getOptionLabel={(o) => o.name || ""}
                                 value={row.party}
-                                onChange={(_e, v) => updatePfCustomer(row._key, "party", v)}
-                                size="small"
-                                renderInput={(params) => (
-                                  <TextField {...params} placeholder="Search customer…" size="small" sx={inputSx} />
-                                )}
+                                onChange={(v) => updatePfCustomer(row._key, "party", v)}
+                                label=""
+                                placeholder="Search customer…"
+                                sx={inputSx}
                               />
                             </TableCell>
                             <TableCell align="center" sx={{ py: 1.25 }}>
@@ -2259,70 +2285,16 @@ const SalesPage = ({ mode = "sales" }) => {
                 <CardContent sx={{ pt: 1, pb: 2, px: 2.5 }}>
                   <Grid container spacing={2}>
                     <Grid size={12}>
-                      <Autocomplete
+                      <PartySelect
                         options={parties}
-                        getOptionLabel={(option) =>
-                          option._addNew ? option._display : option.name || ""
-                        }
                         value={selectedParty}
-                        isOptionEqualToValue={(opt, val) => opt.id === val.id}
-                        filterOptions={(options, { inputValue }) => {
-                          const lower = inputValue.toLowerCase();
-                          const filtered = options.filter(
-                            (o) =>
-                              !o._addNew &&
-                              o.name.toLowerCase().includes(lower),
-                          );
-                          filtered.push({
-                            _addNew: true,
-                            _display: inputValue
-                              ? ` Create "${inputValue}"`
-                              : ` New ${isSale ? "Customer" : "Vendor"}`,
-                            _inputValue: inputValue,
-                            id: "__add_new_party__",
-                            name: "",
-                          });
-                          return filtered;
-                        }}
-                        onChange={(_e, v) => {
-                          if (v?._addNew) {
-                            openQuickAddParty(v._inputValue, (p) =>
-                              setSelectedParty(p),
-                            );
-                            return;
-                          }
-                          setSelectedParty(v);
-                        }}
-                        renderOption={(props, option) =>
-                          option._addNew ? (
-                            <li {...props} key="__add_new_party__">
-                              <Box
-                                sx={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 0.75,
-                                  color: tokens.primary,
-                                  fontWeight: 700,
-                                  fontSize: "0.875rem",
-                                }}
-                              >
-                                <Plus size={14} />
-                                {option._display}
-                              </Box>
-                            </li>
-                          ) : (
-                            <li {...props}>{option.name}</li>
-                          )
+                        onChange={(v) => setSelectedParty(v)}
+                        onAddNew={(inputValue) =>
+                          openQuickAddParty(inputValue, (p) => setSelectedParty(p))
                         }
-                        renderInput={(params) => (
-                          <TextField
-                            {...params}
-                            label={isSale ? "Customer" : "Vendor"}
-                            placeholder={`Search ${isSale ? "customer" : "vendor"}… (optional — Cash & Carry)`}
-                            size="small"
-                            sx={inputSx}
-                          />
-                        )}
+                        label={isSale ? "Customer" : "Vendor"}
+                        placeholder={`Search ${isSale ? "customer" : "vendor"}… (optional — Cash & Carry)`}
+                        sx={inputSx}
                       />
                       {!selectedParty && (
                         <Box
@@ -2549,112 +2521,37 @@ const SalesPage = ({ mode = "sales" }) => {
                             }}
                           >
                             <TableCell sx={{ pl: 3, py: 1.25 }}>
-                              <Autocomplete
-                                freeSolo
+                              <ItemSelect
                                 options={stockItems}
-                                getOptionLabel={(option) => {
-                                  if (typeof option === "string") return option;
-                                  return option._addNew
-                                    ? option._display
-                                    : option.name || "";
-                                }}
-                                size="small"
                                 value={
                                   item.itemId
-                                    ? stockItems.find(
-                                        (i) => i.id === item.itemId,
-                                      ) || null
+                                    ? stockItems.find((i) => i.id === item.itemId) || null
                                     : item.name || null
                                 }
-                                isOptionEqualToValue={(opt, val) => {
-                                  if (
-                                    typeof opt === "string" ||
-                                    typeof val === "string"
-                                  )
-                                    return opt === val;
-                                  return opt.id === val.id;
-                                }}
-                                filterOptions={(options, { inputValue }) => {
-                                  const lower = inputValue.toLowerCase();
-                                  const filtered = options.filter(
-                                    (o) =>
-                                      !o._addNew &&
-                                      o.name.toLowerCase().includes(lower),
-                                  );
-                                  filtered.push({
-                                    _addNew: true,
-                                    _display: inputValue
-                                      ? ` Create "${inputValue}"`
-                                      : ` New Item`,
-                                    _inputValue: inputValue,
-                                    id: "__add_new_item__",
-                                    name: "",
-                                  });
-                                  return filtered;
-                                }}
-                                onChange={(_e, v) => {
+                                onChange={(v) => {
                                   if (typeof v === "string") {
                                     const newItems = [...items];
-                                    newItems[index] = {
-                                      ...newItems[index],
-                                      itemId: "",
-                                      name: v,
-                                    };
+                                    newItems[index] = { ...newItems[index], itemId: "", name: v };
                                     setItems(newItems);
-                                    return;
-                                  }
-                                  if (v?._addNew) {
-                                    openQuickAddItem(v._inputValue, (newItem) =>
-                                      updateItemRow(
-                                        index,
-                                        "itemId",
-                                        newItem.id,
-                                      ),
-                                    );
                                     return;
                                   }
                                   updateItemRow(index, "itemId", v?.id);
                                 }}
-                                onInputChange={(_e, val, reason) => {
-                                  if (reason === "input" && !item.itemId) {
+                                onInputChange={(val) => {
+                                  if (!item.itemId) {
                                     const newItems = [...items];
-                                    newItems[index] = {
-                                      ...newItems[index],
-                                      name: val,
-                                    };
+                                    newItems[index] = { ...newItems[index], name: val };
                                     setItems(newItems);
                                   }
                                 }}
-                                renderOption={(props, option) =>
-                                  option._addNew ? (
-                                    <li {...props} key="__add_new_item__">
-                                      <Box
-                                        sx={{
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: 0.75,
-                                          color: tokens.primary,
-                                          fontWeight: 700,
-                                          fontSize: "0.875rem",
-                                        }}
-                                      >
-                                        <Plus size={14} />
-                                        {option._display}
-                                      </Box>
-                                    </li>
-                                  ) : (
-                                    <li {...props}>{option.name}</li>
+                                onAddNew={(inputValue) =>
+                                  openQuickAddItem(inputValue, (newItem) =>
+                                    updateItemRow(index, "itemId", newItem.id),
                                   )
                                 }
-                                renderInput={(params) => (
-                                  <TextField
-                                    {...params}
-                                    placeholder="Search or select item…"
-                                    variant="outlined"
-                                    size="small"
-                                    sx={inputSx}
-                                  />
-                                )}
+                                isSale={isSale}
+                                placeholder="Search or select item…"
+                                sx={inputSx}
                               />
                             </TableCell>
                             <TableCell align="center" sx={{ py: 1.25 }}>
@@ -3687,26 +3584,11 @@ const SalesPage = ({ mode = "sales" }) => {
                 />
               </Grid>
               <Grid item xs={12} sm={6} md={3}>
-                <Autocomplete
-                  fullWidth
-                  size="small"
+                <PartySelect
                   options={parties}
-                  getOptionLabel={(option) => option.name}
                   value={parties.find((p) => p.id === filters.partyId) || null}
-                  onChange={(e, value) =>
-                    setFilters({ ...filters, partyId: value?.id || "" })
-                  }
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label={isSale ? "Customer" : "Vendor"}
-                      sx={{
-                        "& .MuiOutlinedInput-root": {
-                          borderRadius: tokens.radius.sm,
-                        },
-                      }}
-                    />
-                  )}
+                  onChange={(v) => setFilters({ ...filters, partyId: v?.id || "" })}
+                  label={isSale ? "Customer" : "Vendor"}
                 />
               </Grid>
               <Grid item xs={6} sm={6} md={1.5}>

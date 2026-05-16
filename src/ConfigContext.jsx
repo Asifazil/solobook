@@ -36,6 +36,8 @@ const defaultConfig = {
   },
   customSections: [],
   defaultPaperSize: 'A4',
+  expenseCategories: ['Office Supplies', 'Travel', 'Utilities', 'Rent', 'Marketing', 'Equipment', 'Miscellaneous'],
+  itemUnits: ['NOS', 'BAGS', 'BOX', 'KGS', 'Ltr', 'Mtr', 'Pcs'],
 };
 
 // Deep merge utility

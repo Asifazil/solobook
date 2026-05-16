@@ -2,13 +2,14 @@ import React, { useState, useRef } from 'react';
 import {
   Box, Button, Typography, TextField, Grid, IconButton, InputAdornment,
   Stack, Paper, Container, Autocomplete, Alert, Snackbar, MenuItem,
-  Tabs, Tab
+  Tabs, Tab, Chip
 } from '@mui/material';
-import { Save, Edit2, Trash2, ChevronLeft, Plus, Printer, User, Calendar, Info } from 'lucide-react';
+import { Save, Edit2, Trash2, ChevronLeft, Plus, Minus, Printer, User, Calendar, Info } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { useConfig } from './ConfigContext';
 import { useBusiness } from './BusinessContext';
 import { useData } from './DataContext';
+import PartySelect from './PartySelect';
 import { useDialog } from './DialogContext';
 import DataGrid from './DataGrid';
 import { useReactToPrint } from 'react-to-print';
@@ -46,6 +47,9 @@ const CustomSection = () => {
   const [editId, setEditId] = useState(null);
   const [activeTabForRecord, setActiveTabForRecord] = useState(null);
   const [form, setForm] = useState({});
+
+  // Select field filters: { [tabId_fieldId]: selectedValue }
+  const [selectFilters, setSelectFilters] = useState({});
 
   // Print state
   const [printingRecord, setPrintingRecord] = useState(null);
@@ -137,7 +141,7 @@ const CustomSection = () => {
     }
   };
 
-  const renderField = (field) => {
+  const renderField = (field, tabFields = []) => {
     const value = form.fields?.[field.id] ?? '';
     const onChange = (e) => handleFieldChange(field.id, e.target.value);
     const label = field.name + (field.required ? ' *' : '');
@@ -152,6 +156,72 @@ const CustomSection = () => {
     }
     if (field.type === 'textarea') {
       return <TextField fullWidth label={label} value={value} onChange={onChange} multiline rows={3} />;
+    }
+    if (field.type === 'counter') {
+      const cv = (value && typeof value === 'object') ? value : { used: 0, total: 0 };
+      const unit = field.unit || 'sessions';
+      const remaining = Math.max(0, (cv.total || 0) - (cv.used || 0));
+      const pct = cv.total > 0 ? Math.round((cv.used / cv.total) * 100) : 0;
+      return (
+        <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 1.5 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            {label}
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 1, flexWrap: 'wrap' }}>
+            <TextField size="small" type="number" label={`Total ${unit}`} value={cv.total}
+              onChange={e => handleFieldChange(field.id, { ...cv, total: Math.max(0, Number(e.target.value)) })}
+              sx={{ width: 110 }} inputProps={{ min: 0 }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <IconButton size="small" onClick={() => handleFieldChange(field.id, { ...cv, used: Math.max(0, (cv.used || 0) - 1) })}
+                sx={{ border: '1px solid', borderColor: 'divider' }}>
+                <Minus size={14} />
+              </IconButton>
+              <Typography sx={{ minWidth: 28, textAlign: 'center', fontWeight: 700 }}>{cv.used}</Typography>
+              <IconButton size="small" onClick={() => handleFieldChange(field.id, { ...cv, used: Math.min(cv.total || 999, (cv.used || 0) + 1) })}
+                sx={{ border: '1px solid', borderColor: 'divider' }}>
+                <Plus size={14} />
+              </IconButton>
+            </Box>
+            <Chip
+              label={`${remaining} remaining`} size="small"
+              color={remaining === 0 ? 'error' : pct >= 75 ? 'warning' : 'success'}
+              sx={{ fontWeight: 600 }} />
+          </Box>
+        </Box>
+      );
+    }
+    if (field.type === 'penalty') {
+      const rate = field.ratePerDay || 0;
+      const dueDateField = tabFields.find(f =>
+        f.type === 'date' && /due|return|deadline|end/i.test(f.name)
+      ) || tabFields.find(f => f.type === 'date');
+      const dueDateVal = dueDateField ? (form.fields?.[dueDateField.id] || '') : '';
+      let fine = 0;
+      let daysOverdue = 0;
+      if (dueDateVal) {
+        daysOverdue = Math.ceil((new Date() - new Date(dueDateVal)) / 86400000);
+        fine = Math.max(0, daysOverdue) * rate;
+      }
+      return (
+        <Box sx={{ border: '1px solid', borderColor: fine > 0 ? 'error.main' : 'divider', borderRadius: 1, p: 1.5, bgcolor: fine > 0 ? 'error.50' : 'background.paper' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            {label}
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+            <Typography variant="h6" sx={{ fontWeight: 800, color: fine > 0 ? 'error.main' : 'text.secondary' }}>
+              ₹{fine.toFixed(2)}
+            </Typography>
+            {dueDateVal && (
+              <Typography variant="caption" color="text.secondary">
+                {daysOverdue > 0 ? `${daysOverdue} days overdue × ₹${rate}/day` : 'Not overdue'}
+              </Typography>
+            )}
+            {!dueDateVal && (
+              <Typography variant="caption" color="text.disabled">Add a due/return date field</Typography>
+            )}
+          </Box>
+        </Box>
+      );
     }
     return (
       <TextField
@@ -220,15 +290,12 @@ const CustomSection = () => {
               <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2 }}>Basic Information</Typography>
               <Grid container spacing={3}>
                 <Grid item xs={12} sm={6}>
-                  <Autocomplete
-                    freeSolo options={parties.map(p => p.name)} fullWidth value={form.partyName}
-                    onChange={(_, v) => setForm(prev => ({ ...prev, partyName: v || '' }))}
-                    onInputChange={(_, v) => setForm(prev => ({ ...prev, partyName: v }))}
-                    renderInput={params => (
-                      <TextField {...params} label="Customer Name"
-                        InputProps={{ ...params.InputProps, startAdornment: <User size={18} style={{ marginRight: 8, color: 'rgba(0,0,0,0.54)' }} /> }}
-                      />
-                    )}
+                  <PartySelect
+                    options={parties}
+                    value={form.partyName}
+                    onChange={(v) => setForm(prev => ({ ...prev, partyName: v }))}
+                    label="Customer Name"
+                    nameOnly
                   />
                 </Grid>
                 <Grid item xs={12} sm={6}>
@@ -257,11 +324,14 @@ const CustomSection = () => {
                   </Typography>
                 </Stack>
                 <Grid container spacing={2.5}>
-                  {(tab?.fields || []).map(field => (
-                    <Grid item xs={12} sm={field.type === 'textarea' ? 12 : 6} md={field.type === 'textarea' ? 12 : 4} key={field.id}>
-                      {renderField(field)}
-                    </Grid>
-                  ))}
+                  {(tab?.fields || []).map(field => {
+                    const fullWidth = ['textarea', 'counter', 'penalty'].includes(field.type);
+                    return (
+                      <Grid item xs={12} sm={fullWidth ? 12 : 6} md={fullWidth ? 12 : 4} key={field.id}>
+                        {renderField(field, tab?.fields || [])}
+                      </Grid>
+                    );
+                  })}
                 </Grid>
               </Paper>
             )}
@@ -284,14 +354,39 @@ const CustomSection = () => {
 
   // ─── Per-tab record list renderer ────────────────────────────────────────
   const renderTabContent = (tab, tabIdx) => {
-    const tabRecords = getTabRecords(tab, tabIdx);
-    const dynColumns = (tab?.fields || []).slice(0, 3).map(f => ({
+    const selectFields = (tab?.fields || []).filter(f => f.type === 'select');
+    const baseRecords = getTabRecords(tab, tabIdx);
+    const tabRecords = baseRecords.filter(r => {
+      return selectFields.every(f => {
+        const filterVal = selectFilters[`${tab.id}_${f.id}`];
+        if (!filterVal) return true;
+        return (r.fields?.[f.id] || '') === filterVal;
+      });
+    });
+
+    const dynColumns = (tab?.fields || []).filter(f => !['counter', 'penalty'].includes(f.type)).slice(0, 3).map(f => ({
       key: 'fields',
       header: `${f.name}${f.unit ? ` (${f.unit})` : ''}`,
       width: 130,
       render: (fields) => {
         const v = fields?.[f.id];
+        if (f.type === 'select' && v) return <Chip label={v} size="small" variant="outlined" />;
         return v ? `${v}${f.unit ? ` ${f.unit}` : ''}` : '—';
+      }
+    }));
+
+    const counterFields = (tab?.fields || []).filter(f => f.type === 'counter');
+    const counterColumns = counterFields.slice(0, 1).map(f => ({
+      key: 'fields',
+      header: f.name,
+      width: 150,
+      render: (fields) => {
+        const v = fields?.[f.id];
+        const cv = (v && typeof v === 'object') ? v : null;
+        if (!cv) return '—';
+        const remaining = Math.max(0, (cv.total || 0) - (cv.used || 0));
+        return <Chip label={`${cv.used}/${cv.total} · ${remaining} left`} size="small"
+          color={remaining === 0 ? 'error' : cv.used > 0 ? 'warning' : 'success'} />;
       }
     }));
 
@@ -306,6 +401,25 @@ const CustomSection = () => {
           />
         </div>
 
+        {selectFields.length > 0 && (
+          <Box sx={{ mb: 2, display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+            {selectFields.map(f => (
+              <TextField
+                key={f.id} select size="small" label={`Filter: ${f.name}`}
+                value={selectFilters[`${tab.id}_${f.id}`] || ''}
+                onChange={e => setSelectFilters(prev => ({ ...prev, [`${tab.id}_${f.id}`]: e.target.value }))}
+                sx={{ minWidth: 160 }}
+              >
+                <MenuItem value="">All</MenuItem>
+                {(f.options || []).map(opt => <MenuItem key={opt} value={opt}>{opt}</MenuItem>)}
+              </TextField>
+            ))}
+            {Object.values(selectFilters).some(Boolean) && (
+              <Button size="small" variant="text" onClick={() => setSelectFilters({})}>Clear filters</Button>
+            )}
+          </Box>
+        )}
+
         <Stack direction="row" justifyContent="flex-end" sx={{ mb: 2 }}>
           <Button variant="contained" disableElevation startIcon={<Plus size={18} />}
             onClick={() => handleNewRecord(tab)}
@@ -319,7 +433,8 @@ const CustomSection = () => {
           columns={[
             { key: 'date', header: 'Date', width: 110 },
             { key: 'partyName', header: 'Customer', width: 180, render: v => v || '—' },
-            ...dynColumns
+            ...dynColumns,
+            ...counterColumns
           ]}
           actions={row => (
             <Stack direction="row" spacing={1}>

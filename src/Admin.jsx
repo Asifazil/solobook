@@ -40,7 +40,9 @@ const FIELD_TYPES = [
   { value: 'number', label: 'Number' },
   { value: 'date', label: 'Date' },
   { value: 'select', label: 'Dropdown' },
-  { value: 'textarea', label: 'Long Text' }
+  { value: 'textarea', label: 'Long Text' },
+  { value: 'counter', label: 'Session Counter' },
+  { value: 'penalty', label: 'Fine / Penalty' },
 ];
 
 const SECTION_ICON_LIST = [
@@ -350,7 +352,8 @@ const Admin = () => {
         required: !!f.required,
         options: f.type === 'select'
           ? (typeof f.options === 'string' ? f.options.split(',').map(o => o.trim()).filter(Boolean) : (f.options || []))
-          : []
+          : [],
+        ratePerDay: f.type === 'penalty' ? (Number(f.ratePerDay) || 0) : 0,
       });
 
       const saveTabs = sectionForm.tabs.map(tab => ({
@@ -920,7 +923,7 @@ const Admin = () => {
                                 {FIELD_TYPES.map(t => <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>)}
                               </TextField>
 
-                              {field.type !== 'textarea' && field.type !== 'date' && field.type !== 'select' && (
+                              {!['textarea', 'date', 'select', 'penalty'].includes(field.type) && (
                                 <TextField size="small" label="Unit" value={field.unit}
                                   onChange={e => updateField(activeTabIdx, fieldIdx, 'unit', e.target.value)}
                                   placeholder="cm, kg…"
@@ -945,6 +948,19 @@ const Admin = () => {
                                 onChange={e => updateField(activeTabIdx, fieldIdx, 'options', e.target.value)}
                                 placeholder="Option 1, Option 2, Option 3"
                                 sx={{ mt: 1.5 }} />
+                            )}
+                            {field.type === 'penalty' && (
+                              <TextField fullWidth size="small" type="number" label="Rate per day (₹)"
+                                value={field.ratePerDay || ''}
+                                onChange={e => updateField(activeTabIdx, fieldIdx, 'ratePerDay', e.target.value)}
+                                placeholder="e.g. 5"
+                                helperText="Auto-calculates fine based on days past the due date field in the same form."
+                                sx={{ mt: 1.5 }} />
+                            )}
+                            {field.type === 'counter' && (
+                              <Typography variant="caption" color="text.secondary" sx={{ mt: 1.5, display: 'block' }}>
+                                Counter tracks sessions used vs. total. Use the Unit field to label (e.g. sessions, classes, visits).
+                              </Typography>
                             )}
                           </Paper>
                         ))}

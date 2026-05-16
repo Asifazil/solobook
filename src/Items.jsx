@@ -14,7 +14,7 @@ import { useReactToPrint } from 'react-to-print';
 import DataGrid from './DataGrid';
 import JsBarcode from 'jsbarcode';
 
-const UNITES = ['NOS', 'BAGS', 'BOX', 'KGS', 'Ltr', 'Mtr', 'Pcs'];
+const DEFAULT_UNITS = ['NOS', 'BAGS', 'BOX', 'KGS', 'Ltr', 'Mtr', 'Pcs'];
 const TAX_SLABS = [0, 5, 12, 18, 28];
 
 const generateBarcode = () => String(Math.floor(Math.random() * 9e8 + 1e8));
@@ -188,13 +188,16 @@ const ItemsPage = () => {
   const { config } = useConfig();
   const { confirm } = useDialog();
   const barcodeEnabled = !!config.features?.barcode;
+  const UNITES = config.itemUnits?.length ? config.itemUnits : DEFAULT_UNITS;
+  const defaultUnit = UNITES[0] || 'NOS';
 
   const [open, setOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [barcodeItem, setBarcodeItem] = useState(null);
   const [formData, setFormData] = useState({
-    name: '', unit: 'NOS', salePrice: 0, purchasePrice: 0,
-    taxRate: 18, hsnCode: '', stock: 0, barcode: '', itemCode: '', barcodeExtraFields: []
+    name: '', unit: defaultUnit, salePrice: 0, purchasePrice: 0,
+    taxRate: 18, hsnCode: '', stock: 0, barcode: '', itemCode: '', barcodeExtraFields: [],
+    batchNo: '', expiryDate: ''
   });
 
   const theme = useTheme();
@@ -212,8 +215,9 @@ const ItemsPage = () => {
     } else {
       setEditingItem(null);
       setFormData({
-        name: '', unit: 'NOS', salePrice: 0, purchasePrice: 0,
-        taxRate: 18, hsnCode: '', stock: 0, barcode: '', itemCode: '', barcodeExtraFields: []
+        name: '', unit: defaultUnit, salePrice: 0, purchasePrice: 0,
+        taxRate: 18, hsnCode: '', stock: 0, barcode: '', itemCode: '', barcodeExtraFields: [],
+        batchNo: '', expiryDate: ''
       });
     }
     setOpen(true);
@@ -337,6 +341,17 @@ const ItemsPage = () => {
       width: 100,
       filterType: 'select',
       filterOptions: UNITES.map(unit => ({ value: unit, label: unit }))
+    },
+    {
+      key: 'expiryDate',
+      header: 'Expiry',
+      width: 130,
+      render: (value) => {
+        if (!value) return <Typography variant="caption" color="text.disabled">—</Typography>;
+        const days = Math.ceil((new Date(value) - new Date()) / 86400000);
+        const color = days < 0 ? 'error' : days <= 30 ? 'warning' : 'default';
+        return <Chip label={value} size="small" color={color} variant={color === 'default' ? 'outlined' : 'filled'} />;
+      }
     }
   ];
 
@@ -460,6 +475,16 @@ const ItemsPage = () => {
               <Grid size={{ xs: 6 }}>
                 <TextField fullWidth type="number" label="Opening Stock" value={formData.stock}
                   onChange={(e) => setFormData({ ...formData, stock: Number(e.target.value) })} />
+              </Grid>
+              <Grid size={{ xs: 6 }}>
+                <TextField fullWidth label="Batch / Lot No." value={formData.batchNo || ''}
+                  onChange={(e) => setFormData({ ...formData, batchNo: e.target.value })}
+                  placeholder="e.g. BT2024-001" />
+              </Grid>
+              <Grid size={{ xs: 6 }}>
+                <TextField fullWidth type="date" label="Expiry Date" value={formData.expiryDate || ''}
+                  onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+                  InputLabelProps={{ shrink: true }} />
               </Grid>
               {barcodeEnabled && (
                 <>

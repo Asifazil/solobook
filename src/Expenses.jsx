@@ -15,7 +15,7 @@ import { useReactToPrint } from 'react-to-print';
 import ExpenseTemplate from './ExpenseTemplate';
 import { useRef } from 'react';
 
-const EXPENSE_CATEGORIES = ['Office Supplies', 'Travel', 'Utilities', 'Rent', 'Marketing', 'Equipment', 'Miscellaneous'];
+const DEFAULT_EXPENSE_CATEGORIES = ['Office Supplies', 'Travel', 'Utilities', 'Rent', 'Marketing', 'Equipment', 'Miscellaneous'];
 
 const ExpensesPage = () => {
   const { currentBusiness } = useBusiness();
@@ -48,6 +48,7 @@ const ExpensesPage = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const { config } = useConfig();
+  const EXPENSE_CATEGORIES = config.expenseCategories?.length ? config.expenseCategories : DEFAULT_EXPENSE_CATEGORIES;
   const [printingData, setPrintingData] = useState(null);
   const [paperSize, setPaperSize] = useState(() => {
     const d = config.defaultPaperSize;

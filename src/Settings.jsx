@@ -25,6 +25,8 @@ const SettingsPage = () => {
   const [msg, setMsg] = useState({ type: '', text: '' });
   const [isNew, setIsNew] = useState(false);
   const [featuresSaving, setFeaturesSaving] = useState(false);
+  const [newExpenseCat, setNewExpenseCat] = useState('');
+  const [newItemUnit, setNewItemUnit] = useState('');
 
   const handleFeatureToggle = async (featureKey, checked) => {
     const newFeatures = { ...(config.features || {}), [featureKey]: checked };
@@ -611,6 +613,102 @@ const SettingsPage = () => {
             </Grid>
           </CardContent>
         </Card>
+      </Box>
+
+      {/* Lists & Categories */}
+      <Box sx={{ mt: 6 }}>
+        <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>Lists &amp; Categories</Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>Customize the dropdown options used across the app. Changes apply immediately.</Typography>
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={6}>
+            <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>Expense Categories</Typography>
+                <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                  <TextField
+                    size="small" fullWidth placeholder="Add new category…"
+                    value={newExpenseCat}
+                    onChange={e => setNewExpenseCat(e.target.value)}
+                    onKeyDown={async e => {
+                      if (e.key === 'Enter' && newExpenseCat.trim()) {
+                        const cats = config.expenseCategories || [];
+                        if (!cats.includes(newExpenseCat.trim())) {
+                          await saveConfig({ ...config, expenseCategories: [...cats, newExpenseCat.trim()] });
+                        }
+                        setNewExpenseCat('');
+                      }
+                    }}
+                  />
+                  <Button variant="contained" disableElevation size="small" startIcon={<Plus size={14} />}
+                    onClick={async () => {
+                      if (!newExpenseCat.trim()) return;
+                      const cats = config.expenseCategories || [];
+                      if (!cats.includes(newExpenseCat.trim())) {
+                        await saveConfig({ ...config, expenseCategories: [...cats, newExpenseCat.trim()] });
+                      }
+                      setNewExpenseCat('');
+                    }}>
+                    Add
+                  </Button>
+                </Box>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {(config.expenseCategories || []).map(cat => (
+                    <Chip key={cat} label={cat} size="small" variant="outlined"
+                      onDelete={async () => {
+                        const updated = (config.expenseCategories || []).filter(c => c !== cat);
+                        await saveConfig({ ...config, expenseCategories: updated });
+                      }}
+                    />
+                  ))}
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>Item Units</Typography>
+                <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                  <TextField
+                    size="small" fullWidth placeholder="Add new unit… (e.g. Ream, Sq.Ft)"
+                    value={newItemUnit}
+                    onChange={e => setNewItemUnit(e.target.value)}
+                    onKeyDown={async e => {
+                      if (e.key === 'Enter' && newItemUnit.trim()) {
+                        const units = config.itemUnits || [];
+                        if (!units.includes(newItemUnit.trim())) {
+                          await saveConfig({ ...config, itemUnits: [...units, newItemUnit.trim()] });
+                        }
+                        setNewItemUnit('');
+                      }
+                    }}
+                  />
+                  <Button variant="contained" disableElevation size="small" startIcon={<Plus size={14} />}
+                    onClick={async () => {
+                      if (!newItemUnit.trim()) return;
+                      const units = config.itemUnits || [];
+                      if (!units.includes(newItemUnit.trim())) {
+                        await saveConfig({ ...config, itemUnits: [...units, newItemUnit.trim()] });
+                      }
+                      setNewItemUnit('');
+                    }}>
+                    Add
+                  </Button>
+                </Box>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {(config.itemUnits || []).map(unit => (
+                    <Chip key={unit} label={unit} size="small" variant="outlined"
+                      onDelete={async () => {
+                        const updated = (config.itemUnits || []).filter(u => u !== unit);
+                        await saveConfig({ ...config, itemUnits: updated });
+                      }}
+                    />
+                  ))}
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
       </Box>
 
       {/* Print & Invoice */}

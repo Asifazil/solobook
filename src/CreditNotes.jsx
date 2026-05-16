@@ -12,6 +12,8 @@ import { useData } from './DataContext';
 import { useDialog } from './DialogContext';
 import { useReactToPrint } from 'react-to-print';
 import InvoiceTemplate from './InvoiceTemplate';
+import PartySelect from './PartySelect';
+import ItemSelect from './ItemSelect';
 
 const CreditNotes = () => {
   const { currentBusiness } = useBusiness();
@@ -183,7 +185,7 @@ const CreditNotes = () => {
           <CardContent>
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6} md={4}>
-                <Autocomplete size="small" options={parties} getOptionLabel={(o) => o.name || ''} value={selectedParty} onChange={(_, v) => setSelectedParty(v)} renderInput={(params) => <TextField {...params} label="Customer" />} />
+                <PartySelect options={parties} value={selectedParty} onChange={(v) => setSelectedParty(v)} label="Customer" placeholder="Search customer…" />
               </Grid>
               <Grid item xs={6} sm={3} md={2}><TextField fullWidth size="small" label="Credit Note #" value={noteNumber} onChange={(e) => setNoteNumber(e.target.value)} /></Grid>
               <Grid item xs={6} sm={3} md={2}><TextField fullWidth size="small" type="date" label="Date" value={noteDate} onChange={(e) => setNoteDate(e.target.value)} InputLabelProps={{ shrink: true }} /></Grid>
@@ -193,7 +195,7 @@ const CreditNotes = () => {
                   <TableBody>
                     {items.map((row, idx) => (
                       <TableRow key={idx}>
-                        <TableCell><Autocomplete size="small" options={stockItems} getOptionLabel={(o) => o.name || ''} value={stockItems.find(i => i.id === row.itemId) || null} onChange={(_, v) => updateItemRow(idx, 'itemId', v?.id || '')} renderInput={(params) => <TextField {...params} />} sx={{ minWidth: 200 }} /></TableCell>
+                        <TableCell><ItemSelect options={stockItems} value={stockItems.find(i => i.id === row.itemId) || null} onChange={(v) => updateItemRow(idx, 'itemId', typeof v === 'string' ? '' : v?.id || '')} placeholder="Item…" sx={{ minWidth: 200 }} /></TableCell>
                         <TableCell><TextField type="number" size="small" value={row.qty} onChange={(e) => updateItemRow(idx, 'qty', parseFloat(e.target.value) || 0)} inputProps={{ min: 0 }} sx={{ width: 70 }} /></TableCell>
                         <TableCell><TextField type="number" size="small" value={row.price} onChange={(e) => updateItemRow(idx, 'price', parseFloat(e.target.value) || 0)} sx={{ width: 90 }} /></TableCell>
                         <TableCell><TextField type="number" size="small" value={row.taxRate} onChange={(e) => updateItemRow(idx, 'taxRate', parseFloat(e.target.value) || 0)} sx={{ width: 60 }} /></TableCell>

@@ -13,6 +13,8 @@ import { useData } from './DataContext';
 import { useDialog } from './DialogContext';
 import { useReactToPrint } from 'react-to-print';
 import InvoiceTemplate from './InvoiceTemplate';
+import PartySelect from './PartySelect';
+import ItemSelect from './ItemSelect';
 
 const Estimates = () => {
   const { currentBusiness } = useBusiness();
@@ -204,13 +206,12 @@ const Estimates = () => {
           <CardContent>
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6} md={4}>
-                <Autocomplete
-                  size="small"
+                <PartySelect
                   options={parties}
-                  getOptionLabel={(o) => o.name || ''}
                   value={selectedParty}
-                  onChange={(_, v) => setSelectedParty(v)}
-                  renderInput={(params) => <TextField {...params} label="Customer" />}
+                  onChange={(v) => setSelectedParty(v)}
+                  label="Customer"
+                  placeholder="Search customer…"
                 />
               </Grid>
               <Grid item xs={6} sm={3} md={2}>
@@ -228,13 +229,11 @@ const Estimates = () => {
                     {items.map((row, idx) => (
                       <TableRow key={idx}>
                         <TableCell>
-                          <Autocomplete
-                            size="small"
+                          <ItemSelect
                             options={stockItems}
-                            getOptionLabel={(o) => o.name || ''}
                             value={stockItems.find(i => i.id === row.itemId) || null}
-                            onChange={(_, v) => updateItemRow(idx, 'itemId', v?.id || '')}
-                            renderInput={(params) => <TextField {...params} />}
+                            onChange={(v) => updateItemRow(idx, 'itemId', typeof v === 'string' ? '' : v?.id || '')}
+                            placeholder="Item…"
                             sx={{ minWidth: 200 }}
                           />
                         </TableCell>

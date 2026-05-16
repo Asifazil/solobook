@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
 import { useFinancialYear } from './FinancialYearContext';
+import PartySelect from './PartySelect';
 import { useConfig } from './ConfigContext';
 import { useData } from './DataContext';
 import { useDialog } from './DialogContext';
@@ -335,19 +336,12 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
 
             {/* Party — wide */}
             <Grid size={{ xs: 12, md: 5 }}>
-              <Autocomplete
-                fullWidth
+              <PartySelect
                 options={parties}
-                getOptionLabel={(option) => option.name || ''}
                 value={parties.find(p => p.id === formData.partyId) || null}
-                onChange={(_, v) => setFormData({ ...formData, partyId: v?.id || '' })}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label={isPaymentIn ? 'Customer' : 'Vendor'}
-                    placeholder={`Search ${isPaymentIn ? 'customer' : 'vendor'}…`}
-                  />
-                )}
+                onChange={(v) => setFormData({ ...formData, partyId: v?.id || '' })}
+                label={isPaymentIn ? 'Customer' : 'Vendor'}
+                placeholder={`Search ${isPaymentIn ? 'customer' : 'vendor'}…`}
               />
             </Grid>
 

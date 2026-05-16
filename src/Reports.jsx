@@ -16,6 +16,8 @@ import { useFinancialYear } from './FinancialYearContext';
 import { useConfig } from './ConfigContext';
 import { useReactToPrint } from 'react-to-print';
 import ReportTemplate from './ReportTemplate';
+import PartySelect from './PartySelect';
+import ItemSelect from './ItemSelect';
 
 const ReportsPage = () => {
   const theme = useTheme();
@@ -430,21 +432,19 @@ const ReportsPage = () => {
               />
             </Grid>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Autocomplete
+              <PartySelect
                 options={parties}
-                getOptionLabel={(option) => option.name}
                 value={parties.find(p => p.id === filters.partyId) || null}
-                onChange={(e, v) => setFilters({...filters, partyId: v?.id || ''})}
-                renderInput={(params) => <TextField {...params} label="Filter by Party" />}
+                onChange={(v) => setFilters({...filters, partyId: v?.id || ''})}
+                label="Filter by Party"
               />
             </Grid>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Autocomplete
+              <ItemSelect
                 options={items}
-                getOptionLabel={(option) => option.name}
                 value={items.find(i => i.id === filters.itemId) || null}
-                onChange={(e, v) => setFilters({...filters, itemId: v?.id || ''})}
-                renderInput={(params) => <TextField {...params} label="Filter by Item" />}
+                onChange={(v) => setFilters({...filters, itemId: typeof v === 'string' ? '' : v?.id || ''})}
+                placeholder="Filter by Item"
               />
             </Grid>
           </Grid>
