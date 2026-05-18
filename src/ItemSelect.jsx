@@ -56,6 +56,7 @@ const ItemSelect = ({
   onInputChange,
   onAddNew,
   isSale = true,
+  canViewPurchasePrice = true,
   placeholder = 'Search or select item…',
   size = 'small',
   fullWidth = true,
@@ -136,7 +137,10 @@ const ItemSelect = ({
               <Typography sx={{ fontWeight: 600, fontSize: '0.875rem', lineHeight: 1.3 }} noWrap>
                 {option.name}
               </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.72rem', lineHeight: 1.2 }}>
+              <Typography variant="caption" color="text.secondary" sx={{
+                fontSize: '0.72rem', lineHeight: 1.2,
+                ...(!isSale && !canViewPurchasePrice ? { filter: 'blur(5px)', userSelect: 'none' } : {}),
+              }}>
                 ₹{Number(price).toFixed(2)}{option.unit ? ` / ${option.unit}` : ''}
               </Typography>
             </Box>

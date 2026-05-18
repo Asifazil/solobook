@@ -12,9 +12,16 @@ const firebaseConfig = {
   messagingSenderId: "537358440365",
   appId: "1:537358440365:web:6d1fa0a66de12b14d8b324"
 };
-
+const firebaseConfigDev = {
+  apiKey: "AIzaSyDc_QNnsDR7eI1YvOOt453gyJUldOJwSiw",
+  authDomain: "solobookdev.firebaseapp.com",
+  projectId: "solobookdev",
+  storageBucket: "solobookdev.firebasestorage.app",
+  messagingSenderId: "653030630222",
+  appId: "1:653030630222:web:7856bf590fcb413a7c741f"
+};
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
+const app = initializeApp(firebaseConfigDev);
 export const auth = getAuth(app);
 export const firestore = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();

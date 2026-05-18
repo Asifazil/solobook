@@ -1,0 +1,35 @@
+<svg width="256" height="256" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#4F46E5"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="rgba(255,255,255,0.18)"/>
+      <stop offset="60%"  stop-color="rgba(255,255,255,0)"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="40" height="40" rx="9" fill="url(#bg)"/>
+  <!-- Gloss -->
+  <rect width="40" height="40" rx="9" fill="url(#shine)"/>
+
+  <!-- Left page -->
+  <path d="M20 9C17 9 12.5 10.2 9 11.8L9 30.5C12.5 29 17 27.8 20 28.5V9Z" fill="white"/>
+  <!-- Right page -->
+  <path d="M20 9C23 9 27.5 10.2 31 11.8L31 30.5C27.5 29 23 27.8 20 28.5V9Z" fill="white" opacity="0.6"/>
+  <!-- Spine -->
+  <rect x="19.5" y="9" width="1" height="19.5" fill="rgba(79,70,229,0.25)"/>
+
+  <!-- Ledger lines -->
+  <line x1="11" y1="16.5" x2="18.5" y2="15.8" stroke="#4F46E5" stroke-width="1.4" stroke-linecap="round" opacity="0.65"/>
+  <line x1="11" y1="20"   x2="18.5" y2="19.3" stroke="#4F46E5" stroke-width="1.4" stroke-linecap="round" opacity="0.65"/>
+  <line x1="11" y1="23.5" x2="18.5" y2="22.8" stroke="#4F46E5" stroke-width="1.1" stroke-linecap="round" opacity="0.45"/>
+
+  <!-- Trend sparkline -->
+  <polyline points="21.5,27 24.5,22 27,24 30.5,17.5"
+    stroke="rgba(109,40,217,0.75)" stroke-width="1.55"
+    stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <circle cx="30.5" cy="17.5" r="1.6" fill="white" opacity="0.9"/>
+</svg>

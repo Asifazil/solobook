@@ -20,7 +20,8 @@ export const BusinessProvider = ({ children }) => {
     state: b.state,
     logo: b.logo || '',
     qrCode: b.qrCode || '',
-    fyStartMonth: b.fyStartMonth ?? 3
+    fyStartMonth: b.fyStartMonth ?? 3,
+    needsSetup: b.needsSetup ?? false
   }));
   
   const currentBusiness = businesses.find(b => b.id === currentBusinessId) || businesses[0];

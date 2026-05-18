@@ -10,6 +10,7 @@ import { useBusiness } from './BusinessContext';
 import { useData } from './DataContext';
 import { useConfig } from './ConfigContext';
 import { useDialog } from './DialogContext';
+import { useAuth } from './AuthContext';
 import { useReactToPrint } from 'react-to-print';
 import DataGrid from './DataGrid';
 import JsBarcode from 'jsbarcode';
@@ -187,6 +188,8 @@ const ItemsPage = () => {
   const { data, addItem, updateItem, deleteItem, getItems } = useData();
   const { config } = useConfig();
   const { confirm } = useDialog();
+  const { staffSession } = useAuth();
+  const canViewPurchasePrice = !staffSession || !!staffSession.features?.viewPurchasePrice;
   const barcodeEnabled = !!config.features?.barcode;
   const UNITES = config.itemUnits?.length ? config.itemUnits : DEFAULT_UNITS;
   const defaultUnit = UNITES[0] || 'NOS';
@@ -463,8 +466,13 @@ const ItemsPage = () => {
               </Grid>
               <Grid size={{ xs: 6 }}>
                 <TextField fullWidth type="number" label="Purchase Price" value={formData.purchasePrice}
-                  onChange={(e) => setFormData({ ...formData, purchasePrice: Number(e.target.value) })}
-                  InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }} />
+                  onChange={(e) => canViewPurchasePrice && setFormData({ ...formData, purchasePrice: Number(e.target.value) })}
+                  InputProps={{
+                    startAdornment: <InputAdornment position="start">₹</InputAdornment>,
+                    readOnly: !canViewPurchasePrice,
+                  }}
+                  inputProps={!canViewPurchasePrice ? { style: { filter: 'blur(6px)', userSelect: 'none' } } : undefined}
+                />
               </Grid>
               <Grid size={{ xs: 6 }}>
                 <TextField fullWidth select label="Tax Rate (%)" value={formData.taxRate}

@@ -1,15 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Box, Typography, Card, CardContent, TextField, Button, Grid, 
+import {
+  Box, Typography, Card, CardContent, TextField, Button, Grid,
   Divider, List, ListItem, ListItemText, IconButton, Alert, Avatar,
-  FormControl, InputLabel, Select, MenuItem, Chip, FormControlLabel, Switch
+  FormControl, InputLabel, Select, MenuItem, Chip, FormControlLabel, Switch,
+  InputAdornment, Stack, Tooltip, alpha
 } from '@mui/material';
-import { Save, Plus, Trash2, Building2, Check, Image, QrCode, FileSearch, RotateCcw, CornerUpLeft, Truck, BookOpen, CalendarRange, Printer } from 'lucide-react';
+import { Save, Plus, Trash2, Building2, Check, Image, QrCode, FileSearch, RotateCcw, CornerUpLeft, Truck, BookOpen, CalendarRange, Printer, Users, Copy, KeyRound } from 'lucide-react';
+import { Visibility, VisibilityOff } from '@mui/icons-material';
 import { useBusiness } from './BusinessContext';
 import { useThemeContext } from './ThemeContext';
 import { useConfig } from './ConfigContext';
 import { useData } from './DataContext';
 import { useDialog } from './DialogContext';
+import { useAuth } from './AuthContext';
+import { firestore } from './db';
+import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
+
+const STAFF_FEATURE_KEYS = [
+  'dashboard', 'parties', 'items', 'sales', 'purchases', 'expenses',
+  'opticals', 'payments', 'reports', 'settings', 'barcode',
+  'backupExportFile', 'backupRestoreFile', 'backupOnline', 'backupRestoreOnline',
+  'viewPurchasePrice'
+];
+
+const STAFF_FEATURE_LABELS = {
+  dashboard: 'Dashboard', parties: 'Parties', items: 'Items', sales: 'Sales',
+  purchases: 'Purchases', expenses: 'Expenses', opticals: 'Opticals',
+  payments: 'Payments', reports: 'Reports', settings: 'Settings', barcode: 'Barcode',
+  backupExportFile: 'Export File', backupRestoreFile: 'Restore File',
+  backupOnline: 'Backup Online', backupRestoreOnline: 'Restore Online',
+  viewPurchasePrice: 'View Purchase Price',
+};
+
+const defaultStaffFeatures = () =>
+  STAFF_FEATURE_KEYS.reduce((acc, key) => ({
+    ...acc,
+    [key]: !['backupOnline', 'backupRestoreOnline', 'backupExportFile', 'backupRestoreFile', 'viewPurchasePrice'].includes(key)
+  }), {});
 
 const SettingsPage = () => {
   const { currentBusiness, businesses, switchBusiness, setCurrentBusinessId } = useBusiness();
@@ -17,6 +44,7 @@ const SettingsPage = () => {
   const { config, saveConfig } = useConfig();
   const { addBusiness, updateBusiness, deleteBusiness: deleteBusinessFromData, deleteItem, getItems } = useData();
   const { confirm, showAlert } = useDialog();
+  const { currentBusiness: authBusiness, isAdmin, staffSession } = useAuth();
   const [uploading, setUploading] = useState({ logo: false, qrCode: false });
   const [formData, setFormData] = useState({
     name: '', gstNumber: '', address: '', phone: '', email: '', state: '',
@@ -27,6 +55,101 @@ const SettingsPage = () => {
   const [featuresSaving, setFeaturesSaving] = useState(false);
   const [newExpenseCat, setNewExpenseCat] = useState('');
   const [newItemUnit, setNewItemUnit] = useState('');
+
+  // Staff management state
+  const [staffList, setStaffList] = useState([]);
+  const [selectedStaff, setSelectedStaff] = useState(null);
+  const [staffForm, setStaffForm] = useState({
+    name: '', username: '', password: '', active: true, features: defaultStaffFeatures()
+  });
+  const [showStaffPwd, setShowStaffPwd] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [staffMsg, setStaffMsg] = useState({ type: '', text: '' });
+
+  // Load staff from Firestore when business is available
+  useEffect(() => {
+    if (!authBusiness?.id) return;
+    const ref = collection(firestore, 'businesses', authBusiness.id, 'staff');
+    const unsub = onSnapshot(ref,
+      snap => setStaffList(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+      err => console.error('Staff load error:', err)
+    );
+    return unsub;
+  }, [authBusiness]);
+
+  const resetStaffForm = () => {
+    setSelectedStaff(null);
+    setStaffForm({ name: '', username: '', password: '', active: true, features: defaultStaffFeatures() });
+    setShowStaffPwd(false);
+  };
+
+  const loadStaff = (staff) => {
+    setSelectedStaff(staff);
+    setStaffForm({
+      name: staff.name || '',
+      username: staff.username || '',
+      password: '',
+      active: staff.active !== false,
+      features: { ...defaultStaffFeatures(), ...(staff.features || {}) }
+    });
+    setShowStaffPwd(false);
+  };
+
+  const handleSaveStaff = async () => {
+    if (!authBusiness?.id) { setStaffMsg({ type: 'error', text: 'No business linked to your account yet.' }); return; }
+    if (!staffForm.name.trim()) { setStaffMsg({ type: 'error', text: 'Name is required.' }); return; }
+    if (!staffForm.username.trim()) { setStaffMsg({ type: 'error', text: 'Username is required.' }); return; }
+    if (!selectedStaff && !staffForm.password) { setStaffMsg({ type: 'error', text: 'Password is required for new staff.' }); return; }
+
+    const username = staffForm.username.trim().toLowerCase();
+    const duplicate = staffList.find(s => s.username === username && s.id !== selectedStaff?.id);
+    if (duplicate) { setStaffMsg({ type: 'error', text: 'Username already taken.' }); return; }
+
+    try {
+      const staffId = selectedStaff?.id || `staff_${Date.now()}`;
+      const staffData = {
+        id: staffId,
+        name: staffForm.name.trim(),
+        username,
+        active: staffForm.active,
+        features: staffForm.features,
+        ...(staffForm.password ? { password: staffForm.password } : {})
+      };
+      await setDoc(doc(firestore, 'businesses', authBusiness.id, 'staff', staffId), staffData, { merge: true });
+      setStaffMsg({ type: 'success', text: selectedStaff ? 'Staff updated.' : 'Staff account created.' });
+      if (!selectedStaff) resetStaffForm();
+      else setSelectedStaff({ ...selectedStaff, ...staffData });
+      setTimeout(() => setStaffMsg({ type: '', text: '' }), 3000);
+    } catch (err) {
+      setStaffMsg({ type: 'error', text: 'Failed: ' + err.message });
+    }
+  };
+
+  const handleDeleteStaff = async (staff) => {
+    if (!authBusiness?.id) return;
+    const ok = await confirm({
+      title: `Remove: ${staff.name}`,
+      message: `Remove ${staff.name}'s account? They will no longer be able to log in.`,
+      confirmLabel: 'Remove', variant: 'danger'
+    });
+    if (!ok) return;
+    try {
+      await deleteDoc(doc(firestore, 'businesses', authBusiness.id, 'staff', staff.id));
+      if (selectedStaff?.id === staff.id) resetStaffForm();
+      setStaffMsg({ type: 'success', text: 'Staff account removed.' });
+      setTimeout(() => setStaffMsg({ type: '', text: '' }), 3000);
+    } catch (err) {
+      setStaffMsg({ type: 'error', text: 'Failed: ' + err.message });
+    }
+  };
+
+  const copyCode = () => {
+    if (authBusiness?.businessCode) {
+      navigator.clipboard.writeText(authBusiness.businessCode).catch(() => {});
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+    }
+  };
 
   const handleFeatureToggle = async (featureKey, checked) => {
     const newFeatures = { ...(config.features || {}), [featureKey]: checked };
@@ -745,6 +868,202 @@ const SettingsPage = () => {
           </CardContent>
         </Card>
       </Box>
+
+      {/* ===== STAFF MANAGEMENT (visible to owner/admin only, not to staff themselves) ===== */}
+      {isAdmin && !staffSession && (
+        <Box sx={{ mt: 6 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>Staff Management</Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+            Create staff accounts and control which features each staff member can access.
+          </Typography>
+
+          {/* Business Code Banner */}
+          {authBusiness?.businessCode && (
+            <Card elevation={0} sx={{ border: '1px solid', borderColor: 'primary.light', bgcolor: alpha('#1976d2', 0.05), mb: 3 }}>
+              <CardContent sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="caption" color="primary" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>
+                    Business Code — Share with Staff
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 0.5 }}>
+                    <Typography variant="h4" sx={{ fontWeight: 900, letterSpacing: 6, fontFamily: 'monospace', color: 'primary.main' }}>
+                      {authBusiness.businessCode}
+                    </Typography>
+                    <Tooltip title={copiedCode ? 'Copied!' : 'Copy'}>
+                      <IconButton size="small" color="primary" onClick={copyCode}>
+                        {copiedCode ? <Check size={18} /> : <Copy size={18} />}
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 300 }}>
+                  Staff use this code along with their username and password on the Staff Login tab of the login page.
+                </Typography>
+              </CardContent>
+            </Card>
+          )}
+
+          {!authBusiness?.businessCode && (
+            <Alert severity="warning" sx={{ mb: 3, borderRadius: 2 }}>
+              Your business profile is not linked yet. Sign out and sign back in to complete setup.
+            </Alert>
+          )}
+
+          {staffMsg.text && (
+            <Alert severity={staffMsg.type} sx={{ mb: 2, borderRadius: 2 }} onClose={() => setStaffMsg({ type: '', text: '' })}>
+              {staffMsg.text}
+            </Alert>
+          )}
+
+          <Grid container spacing={3}>
+            {/* Left: Staff list */}
+            <Grid item xs={12} md={4}>
+              <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+                <CardContent sx={{ p: 2.5 }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Users size={18} />
+                      <Typography variant="h6" sx={{ fontWeight: 700 }}>Staff Accounts</Typography>
+                    </Box>
+                    <Button size="small" startIcon={<Plus size={16} />} onClick={resetStaffForm}>New</Button>
+                  </Stack>
+                  <Divider sx={{ mb: 2 }} />
+                  <Box sx={{ maxHeight: 400, overflowY: 'auto' }}>
+                    {staffList.length === 0 && (
+                      <Box sx={{ py: 5, textAlign: 'center' }}>
+                        <Users size={32} style={{ opacity: 0.15, marginBottom: 8, display: 'block', margin: '0 auto 8px' }} />
+                        <Typography variant="body2" color="text.secondary">No staff accounts yet.</Typography>
+                        <Typography variant="caption" color="text.secondary">Click "New" to add your first staff member.</Typography>
+                      </Box>
+                    )}
+                    {staffList.map(s => (
+                      <Box
+                        key={s.id}
+                        onClick={() => loadStaff(s)}
+                        sx={{
+                          mb: 1.5, p: 1.5, borderRadius: 2, border: '1px solid', cursor: 'pointer',
+                          borderColor: selectedStaff?.id === s.id ? 'primary.main' : 'divider',
+                          bgcolor: selectedStaff?.id === s.id ? alpha('#1976d2', 0.06) : 'background.paper',
+                          display: 'flex', alignItems: 'center', gap: 1,
+                          '&:hover': { borderColor: 'primary.light' }, transition: 'border-color 0.15s'
+                        }}
+                      >
+                        <Avatar sx={{ width: 32, height: 32, fontSize: '0.8rem', bgcolor: s.active !== false ? 'primary.main' : 'text.disabled' }}>
+                          {(s.name?.[0] || '?').toUpperCase()}
+                        </Avatar>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>{s.name}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            @{s.username} · {s.active !== false ? 'Active' : 'Inactive'}
+                          </Typography>
+                        </Box>
+                        <Tooltip title="Remove">
+                          <IconButton size="small" color="error" onClick={e => { e.stopPropagation(); handleDeleteStaff(s); }}>
+                            <Trash2 size={15} />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    ))}
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* Right: Staff form */}
+            <Grid item xs={12} md={8}>
+              <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+                <CardContent sx={{ p: 3 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, mb: 2.5 }}>
+                    {selectedStaff ? `Editing: ${selectedStaff.name}` : 'New Staff Account'}
+                  </Typography>
+                  <Grid container spacing={2.5}>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        label="Full Name *" fullWidth
+                        value={staffForm.name}
+                        onChange={e => setStaffForm(f => ({ ...f, name: e.target.value }))}
+                        placeholder="e.g. Rahul Kumar"
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        label="Username *" fullWidth
+                        value={staffForm.username}
+                        onChange={e => setStaffForm(f => ({ ...f, username: e.target.value.toLowerCase().replace(/\s/g, '') }))}
+                        placeholder="e.g. rahul"
+                        helperText="Lowercase, no spaces. Used to log in."
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        label={selectedStaff ? 'New Password (blank = keep existing)' : 'Password *'}
+                        fullWidth
+                        type={showStaffPwd ? 'text' : 'password'}
+                        value={staffForm.password}
+                        onChange={e => setStaffForm(f => ({ ...f, password: e.target.value }))}
+                        InputProps={{
+                          startAdornment: <InputAdornment position="start"><KeyRound size={16} style={{ opacity: 0.4 }} /></InputAdornment>,
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <IconButton size="small" onClick={() => setShowStaffPwd(v => !v)} edge="end">
+                                {showStaffPwd ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                              </IconButton>
+                            </InputAdornment>
+                          )
+                        }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6} sx={{ display: 'flex', alignItems: 'center' }}>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={staffForm.active}
+                            onChange={e => setStaffForm(f => ({ ...f, active: e.target.checked }))}
+                            color="success"
+                          />
+                        }
+                        label={staffForm.active ? 'Account Active' : 'Account Inactive'}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <Divider sx={{ mb: 2 }} />
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>Allowed Features</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                        Toggle features on or off. Disabled ones are completely hidden from this staff member.
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {STAFF_FEATURE_KEYS.map(key => (
+                          <Chip
+                            key={key}
+                            label={STAFF_FEATURE_LABELS[key] || key}
+                            clickable
+                            color={staffForm.features[key] ? 'primary' : 'default'}
+                            variant={staffForm.features[key] ? 'filled' : 'outlined'}
+                            onClick={() => setStaffForm(f => ({
+                              ...f,
+                              features: { ...f.features, [key]: !f.features[key] }
+                            }))}
+                          />
+                        ))}
+                      </Box>
+                    </Grid>
+
+                    <Grid item xs={12} sx={{ mt: 1 }}>
+                      <Stack direction="row" spacing={1.5} justifyContent="flex-end">
+                        <Button variant="outlined" onClick={resetStaffForm}>Cancel</Button>
+                        <Button variant="contained" startIcon={<Save size={18} />} onClick={handleSaveStaff}>
+                          {selectedStaff ? 'Update Staff' : 'Create Staff Account'}
+                        </Button>
+                      </Stack>
+                    </Grid>
+                  </Grid>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        </Box>
+      )}
 
       <Box sx={{ mt: 6 }}>
         <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>Appearance</Typography>

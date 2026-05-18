@@ -26,15 +26,25 @@ const emptyData = () => ({
 });
 
 export const DataProvider = ({ children }) => {
-  const { currentUser, isAuthorized } = useAuth();
+  const { currentUser, isAuthorized, staffSession, loading: authLoading } = useAuth();
   const [data, setData] = useState(emptyData());
   const [allBusinessData, setAllBusinessData] = useState({});
   const [loading, setLoading] = useState(true);
   const [currentBusinessId, setCurrentBusinessId] = useState(null);
   const [saving, setSaving] = useState(false);
   const isUpdatingDataRef = useRef(false);
+  // Keep a ref so saveCurrentBusinessData always reads the latest staffSession
+  const staffSessionRef = useRef(staffSession);
+  useEffect(() => { staffSessionRef.current = staffSession; }, [staffSession]);
 
   useEffect(() => {
+    // Wait for Firebase auth to finish resolving before touching data
+    if (authLoading) return;
+
+    if (staffSession) {
+      loadStaffData(staffSession);
+      return;
+    }
     if (!currentUser || !isAuthorized) {
       setData(emptyData());
       setAllBusinessData({});
@@ -42,7 +52,8 @@ export const DataProvider = ({ children }) => {
       return;
     }
     loadAllData();
-  }, [currentUser, isAuthorized]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, currentUser?.uid, isAuthorized, staffSession?.id]);
 
   // Listen for business changes from localStorage
   useEffect(() => {
@@ -60,14 +71,15 @@ export const DataProvider = ({ children }) => {
   const createDefaultBusinessData = () => ({
     '1': {
       id: 1,
-      name: 'My Accounting Business',
+      name: 'My Business',
       gstNumber: '',
       address: '',
       phone: '',
       email: '',
-      state: 'Unknown',
+      state: '',
       logo: '',
       qrCode: '',
+      needsSetup: true,
       data: emptyData()
     }
   });
@@ -76,18 +88,43 @@ export const DataProvider = ({ children }) => {
     if (!currentUser || !isAuthorized) return;
     try {
       setLoading(true);
-      console.log('📂 Loading business data from IndexedDB...');
-      const local = await getLocalData(currentUser.uid);
 
-      if (local && typeof local === 'object' && Object.keys(local).length > 0) {
-        console.log('✅ Loaded businesses from IndexedDB:', Object.keys(local));
-        setAllBusinessData(local);
-        const storedBusinessId = Number(localStorage.getItem('currentBusinessId'));
-        const businessIds = Object.values(local).map(b => b.id);
-        const validBusinessId = businessIds.includes(storedBusinessId) ? storedBusinessId : businessIds[0];
-        if (validBusinessId) {
-          setCurrentBusinessId(validBusinessId);
-          localStorage.setItem('currentBusinessId', validBusinessId.toString());
+      // Firestore is the source of truth — both owner and staff write here,
+      // so loading from Firestore first ensures both always see the same data.
+      let finalData = null;
+
+      try {
+        const snap = await getDoc(doc(firestore, 'users', currentUser.uid));
+        if (snap.exists()) {
+          const remote = snap.data().businesses;
+          if (remote && typeof remote === 'object' && Object.keys(remote).length > 0) {
+            finalData = remote;
+            // Keep IndexedDB in sync as a local offline cache.
+            saveToIndexedDB(remote).catch(() => {});
+          }
+        }
+      } catch (_) {
+        // Firestore unreachable — fall through to IndexedDB.
+      }
+
+      // Offline fallback: use IndexedDB cache.
+      if (!finalData) {
+        const local = await getLocalData(currentUser.uid);
+        if (local && typeof local === 'object' && Object.keys(local).length > 0) {
+          finalData = local;
+          // Push the cached data to Firestore so staff can see it once we're back online.
+          setDoc(doc(firestore, 'users', currentUser.uid), { businesses: local }, { merge: true }).catch(() => {});
+        }
+      }
+
+      if (finalData) {
+        setAllBusinessData(finalData);
+        const storedId = Number(localStorage.getItem('currentBusinessId'));
+        const ids = Object.values(finalData).map(b => b.id);
+        const validId = ids.includes(storedId) ? storedId : ids[0];
+        if (validId) {
+          setCurrentBusinessId(validId);
+          localStorage.setItem('currentBusinessId', validId.toString());
         }
       } else {
         const defaultData = createDefaultBusinessData();
@@ -116,6 +153,38 @@ export const DataProvider = ({ children }) => {
     } catch (e) {
       console.error('IndexedDB save failed:', e);
       return false;
+    }
+  };
+
+  /** Load business data from the owner's Firestore backup for staff sessions. */
+  const loadStaffData = async (session) => {
+    setLoading(true);
+    try {
+      const ownerDocRef = doc(firestore, 'users', session.ownerUid);
+      const ownerDoc = await getDoc(ownerDocRef);
+      const businesses = ownerDoc.exists() ? ownerDoc.data().businesses : null;
+
+      if (businesses && typeof businesses === 'object' && Object.keys(businesses).length > 0) {
+        setAllBusinessData(businesses);
+        const firstBiz = Object.values(businesses)[0];
+        setCurrentBusinessId(firstBiz.id);
+        setData(firstBiz.data || emptyData());
+      } else {
+        // Owner hasn't backed up to Firestore yet — show empty state without setup prompt
+        const fallback = { ...createDefaultBusinessData()['1'], needsSetup: false, name: session.businessName || 'Business' };
+        setAllBusinessData({ '1': fallback });
+        setCurrentBusinessId(1);
+        setData(emptyData());
+        console.warn('No Firestore backup found for this business. Ask the owner to do an online backup.');
+      }
+    } catch (err) {
+      console.error('Failed to load staff data from Firestore:', err);
+      const fallback = { ...createDefaultBusinessData()['1'], needsSetup: false, name: session.businessName || 'Business' };
+      setAllBusinessData({ '1': fallback });
+      setCurrentBusinessId(1);
+      setData(emptyData());
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -193,10 +262,18 @@ export const DataProvider = ({ children }) => {
   };
 
   const saveAllData = async (businessData) => {
+    // Staff saves are handled separately in saveCurrentBusinessData via Firestore.
+    if (staffSessionRef.current) return true;
     if (!currentUser || !isAuthorized) return false;
     try {
       setSaving(true);
-      return await saveToIndexedDB(businessData);
+      // Write to Firestore (shared source of truth) and IndexedDB (offline cache) in parallel.
+      // Both owner and staff read from Firestore, so this keeps them in sync automatically.
+      await Promise.allSettled([
+        saveToIndexedDB(businessData),
+        setDoc(doc(firestore, 'users', currentUser.uid), { businesses: businessData }, { merge: true }),
+      ]);
+      return true;
     } finally {
       setSaving(false);
     }
@@ -233,6 +310,24 @@ export const DataProvider = ({ children }) => {
     if (!updatedBusinessData) return false;
 
     setData(newData);
+
+    // Staff: write directly to the owner's Firestore data path
+    const activeStaffSession = staffSessionRef.current;
+    if (activeStaffSession) {
+      try {
+        setSaving(true);
+        const ownerDocRef = doc(firestore, 'users', activeStaffSession.ownerUid);
+        await setDoc(ownerDocRef, { businesses: updatedBusinessData }, { merge: true });
+        return true;
+      } catch (e) {
+        console.error('Staff Firestore save failed:', e);
+        return false;
+      } finally {
+        setSaving(false);
+        setTimeout(() => { isUpdatingDataRef.current = false; }, 100);
+      }
+    }
+
     const saved = await saveAllData(updatedBusinessData);
 
     // Reset flag after a short delay to allow state to settle
@@ -518,9 +613,10 @@ export const DataProvider = ({ children }) => {
 
     if (saved) {
       console.log(`✅ Business updated: ${updatedBusiness.name} (ID: ${businessId})`);
+      return updatedBusinessData;
     }
 
-    return saved;
+    return false;
   };
 
   const deleteBusiness = async (businessId) => {

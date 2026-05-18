@@ -74,6 +74,7 @@ import { useBusiness } from "./BusinessContext";
 import { useFinancialYear } from './FinancialYearContext';
 import { useData } from "./DataContext";
 import { useConfig } from "./ConfigContext";
+import { useAuth } from "./AuthContext";
 import { useReactToPrint } from "react-to-print";
 import { useLocation } from "react-router-dom";
 import InvoiceTemplate from "./InvoiceTemplate";
@@ -241,6 +242,8 @@ const SalesPage = ({ mode = "sales" }) => {
   const { activeFY } = useFinancialYear();
   const { data, addItem, updateItem, deleteItem, getItems } = useData();
   const { config } = useConfig();
+  const { staffSession } = useAuth();
+  const canViewPurchasePrice = !staffSession || !!staffSession.features?.viewPurchasePrice;
   const location = useLocation();
   const barcodeScanEnabled = !!config.features?.barcode;
 
@@ -1071,9 +1074,11 @@ const SalesPage = ({ mode = "sales" }) => {
         }
         for (const [itemId, delta] of Object.entries(stockDeltas)) {
           if (delta !== 0) {
-            const stockItem = currentStockItems.find((i) => i.id === itemId);
+            // Object.entries converts keys to strings; match by string comparison
+            // then use stockItem.id (original type) for the updateItem call.
+            const stockItem = currentStockItems.find((i) => String(i.id) === itemId);
             if (stockItem)
-              await updateItem("items", itemId, {
+              await updateItem("items", stockItem.id, {
                 stock: stockItem.stock + delta,
               });
           }
@@ -1689,11 +1694,13 @@ const SalesPage = ({ mode = "sales" }) => {
                   fullWidth
                   placeholder="0"
                   onChange={(e) =>
-                    setQuickAddItem((s) => ({
+                    canViewPurchasePrice && setQuickAddItem((s) => ({
                       ...s,
                       purchasePrice: e.target.value,
                     }))
                   }
+                  InputProps={{ readOnly: !canViewPurchasePrice }}
+                  inputProps={!canViewPurchasePrice ? { style: { filter: 'blur(6px)', userSelect: 'none' } } : undefined}
                   sx={{
                     "& .MuiOutlinedInput-root": {
                       borderRadius: tokens.radius.sm,
@@ -1935,7 +1942,7 @@ const SalesPage = ({ mode = "sales" }) => {
                       { label: "Sale Price", value: `₹${pfProduct.salePrice || 0}`, color: tokens.primary },
                       { label: "In Stock",   value: `${pfProduct.stock ?? "—"} ${pfProduct.unit || ""}`.trim(), color: tokens.success },
                       { label: "GST Rate",   value: `${pfNoGST ? 0 : (pfProduct.taxRate || 0)}%`, color: "text.primary" },
-                      ...(pfProduct.purchasePrice
+                      ...(pfProduct.purchasePrice && canViewPurchasePrice
                         ? [{ label: "Margin", value: `₹${((pfProduct.salePrice || 0) - pfProduct.purchasePrice).toFixed(0)}`, color: tokens.success }]
                         : []),
                     ].map((stat, i, arr) => (
@@ -2550,6 +2557,7 @@ const SalesPage = ({ mode = "sales" }) => {
                                   )
                                 }
                                 isSale={isSale}
+                                canViewPurchasePrice={canViewPurchasePrice}
                                 placeholder="Search or select item…"
                                 sx={inputSx}
                               />

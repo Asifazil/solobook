@@ -41,18 +41,10 @@ import { useConfig } from './ConfigContext';
 import { useFinancialYear } from './FinancialYearContext';
 import SectionIcon from './SectionIcon';
 import { useDialog } from './DialogContext';
+import BusinessSetupDialog from './BusinessSetupDialog';
+import SoloBooksLogo from './SoloBooksLogo';
 
 const drawerWidth = 240;
-
-// Ledger icon inline SVG for branding
-const LedgerIcon = ({ size = 18, color = 'white' }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 19.5C4 18.837 4.26339 18.2011 4.73223 17.7322C5.20107 17.2634 5.83696 17 6.5 17H20" />
-    <path d="M6.5 2H20V22H6.5C5.83696 22 5.20107 21.7366 4.73223 21.2678C4.26339 20.7989 4 20.163 4 19.5V4.5C4 3.83696 4.26339 3.20107 4.73223 2.73223" />
-    <path d="M9 7H15" />
-    <path d="M9 11H15" />
-  </svg>
-);
 
 const NavSectionLabel = ({ label }) => (
   <Typography
@@ -125,7 +117,7 @@ const Layout = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentBusiness, businesses, switchBusiness } = useBusiness();
-  const { logout, currentUser, isAdmin } = useAuth();
+  const { logout, currentUser, isAdmin, staffSession } = useAuth();
   const { config } = useConfig();
   const { confirm } = useDialog();
   const { getItems } = useData();
@@ -208,8 +200,12 @@ const Layout = ({ children }) => {
     config.customSections?.find(s => location.pathname === `/section/${s.id}`)?.name ||
     'Accounting';
 
-  const userInitial =
-    (currentUser?.displayName?.[0] || currentUser?.email?.[0] || 'U').toUpperCase();
+  const isStaff = !!staffSession;
+  const userDisplayName = isStaff ? staffSession.name : (currentUser?.displayName || 'User');
+  const userEmail = isStaff ? `@${staffSession.username}` : currentUser?.email;
+  const userInitial = isStaff
+    ? (staffSession.name?.[0] || 'S').toUpperCase()
+    : (currentUser?.displayName?.[0] || currentUser?.email?.[0] || 'U').toUpperCase();
 
   const handlePasswordSubmit = () => {
     if (passwordDialog.business && passwordDialog.business.password === passwordDialog.password) {
@@ -240,20 +236,7 @@ const Layout = ({ children }) => {
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-          <Box
-            sx={{
-              width: 30,
-              height: 30,
-              bgcolor: 'primary.main',
-              borderRadius: 1.5,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <LedgerIcon size={16} />
-          </Box>
+          <SoloBooksLogo size={30} />
           <Typography
             sx={{
               fontWeight: 800,
@@ -301,8 +284,8 @@ const Layout = ({ children }) => {
         ))}
       </Box>
 
-      {/* Business Switcher Footer */}
-      {config.multiBusiness && (
+      {/* Business Switcher Footer — hidden for staff (they always belong to one business) */}
+      {config.multiBusiness && !isStaff && (
         <Box sx={{ flexShrink: 0 }}>
           <Divider />
           <Box sx={{ p: 1.25 }}>
@@ -638,19 +621,20 @@ const Layout = ({ children }) => {
           )}
 
           {/* User avatar + menu */}
-          <Tooltip title={currentUser?.email || 'Account'}>
+          <Tooltip title={userEmail || 'Account'}>
             <IconButton
               size="small"
               onClick={(e) => setUserMenuAnchor(e.currentTarget)}
               sx={{ p: 0.5 }}
             >
               <Avatar
+                src={!isStaff ? currentUser?.photoURL : undefined}
                 sx={{
                   width: 30,
                   height: 30,
                   fontSize: '0.75rem',
                   fontWeight: 700,
-                  bgcolor: 'primary.main',
+                  bgcolor: isStaff ? 'secondary.main' : 'primary.main',
                   color: '#fff',
                 }}
               >
@@ -669,11 +653,16 @@ const Layout = ({ children }) => {
           >
             <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
               <Typography variant="subtitle2" noWrap sx={{ color: 'text.primary' }}>
-                {currentUser?.displayName || 'User'}
+                {userDisplayName}
               </Typography>
               <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
-                {currentUser?.email}
+                {userEmail}
               </Typography>
+              {isStaff && (
+                <Typography variant="caption" sx={{ color: 'secondary.main', fontWeight: 700 }}>
+                  Staff · {staffSession.businessName}
+                </Typography>
+              )}
             </Box>
             <MenuItem
               onClick={async () => {
@@ -770,6 +759,8 @@ const Layout = ({ children }) => {
           onClose={() => setGlobalScanOpen(false)}
         />
       )}
+
+      <BusinessSetupDialog />
     </Box>
   );
 };

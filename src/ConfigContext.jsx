@@ -53,11 +53,26 @@ const deepMerge = (target, source) => {
 };
 
 export const ConfigProvider = ({ children }) => {
-  const { currentUser } = useAuth();
+  const { currentUser, staffSession } = useAuth();
   const [config, setConfig] = useState(defaultConfig);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Staff session: apply only the feature flags set by the owner; everything else from defaults
+    if (staffSession) {
+      try {
+        const staffFeatures = staffSession.features && typeof staffSession.features === 'object'
+          ? staffSession.features
+          : {};
+        const merged = deepMerge(JSON.parse(JSON.stringify(defaultConfig)), { features: staffFeatures });
+        setConfig(merged);
+      } catch (_) {
+        setConfig(defaultConfig);
+      }
+      setLoading(false);
+      return undefined;
+    }
+
     if (!currentUser?.email) {
       setConfig(defaultConfig);
       return undefined;
@@ -85,7 +100,7 @@ export const ConfigProvider = ({ children }) => {
     );
 
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [currentUser, staffSession]);
 
   const saveConfig = useCallback(
     async (newConfig) => {

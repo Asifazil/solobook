@@ -28,6 +28,7 @@ import Journal from './Journal';
 import CustomSection from './CustomSection';
 import { FinancialYearProvider } from './FinancialYearContext';
 import { DialogProvider } from './DialogContext';
+
 const AppContent = () => {
   const { isAuthenticated, loading, isAuthorized, authError, isAdmin, logout } = useAuth();
   const { currentBusiness } = useBusiness();
@@ -58,13 +59,7 @@ const AppContent = () => {
             >
               <Paper
                 elevation={6}
-                sx={{
-                  maxWidth: 420,
-                  width: '100%',
-                  p: 4,
-                  textAlign: 'center',
-                  borderRadius: 3,
-                }}
+                sx={{ maxWidth: 420, width: '100%', p: 4, textAlign: 'center', borderRadius: 3 }}
               >
                 <Typography variant="h5" sx={{ fontWeight: 700, mb: 1 }}>
                   Access Denied
@@ -72,12 +67,7 @@ const AppContent = () => {
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                   {authError || 'Your email is not authorized to access this application. Please contact the administrator.'}
                 </Typography>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  fullWidth
-                  onClick={logout}
-                >
+                <Button variant="contained" color="primary" fullWidth onClick={logout}>
                   Logout
                 </Button>
               </Paper>
