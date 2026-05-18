@@ -3,8 +3,9 @@ import {
   Box, Button, Card, CardContent, Typography, TextField, Dialog,
   DialogTitle, DialogContent, DialogActions, Grid, MenuItem,
   InputAdornment, Chip, IconButton, Snackbar, Alert, Stack,
-  alpha, useTheme
+  alpha, useTheme, useMediaQuery
 } from '@mui/material';
+import { X as CloseIcon } from 'lucide-react';
 import { Plus, Edit2, Trash2, Box as BoxIcon, Barcode, Printer, RefreshCw, Package, TrendingUp, AlertTriangle } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
 import { useData } from './DataContext';
@@ -204,6 +205,7 @@ const ItemsPage = () => {
   });
 
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [filters, setFilters] = useState({});
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'error' });
 
@@ -433,9 +435,16 @@ const ItemsPage = () => {
       />
 
       {/* Add / Edit Dialog */}
-      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth fullScreen={isMobile}>
         <form onSubmit={handleSubmit}>
-          <DialogTitle>{editingItem ? 'Edit Item' : 'Add New Item'}</DialogTitle>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            {editingItem ? 'Edit Item' : 'Add New Item'}
+            {isMobile && (
+              <IconButton size="small" onClick={handleClose} sx={{ color: 'text.secondary' }}>
+                <CloseIcon size={20} />
+              </IconButton>
+            )}
+          </DialogTitle>
           <DialogContent dividers>
             <Grid container spacing={2} sx={{ mt: 0 }}>
               <Grid size={{ xs: 12, sm: 6 }}>

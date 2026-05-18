@@ -197,7 +197,7 @@ const PartiesPage = () => {
           </Box>
           <Button variant="contained" startIcon={<Plus size={16} />} onClick={() => handleOpen()}
             sx={{ bgcolor: 'white', color: '#3730a3', fontWeight: 700, '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' }, borderRadius: 2, textTransform: 'none', flexShrink: 0 }}>
-            Add Party
+            {tab === 0 ? 'Add Customer' : 'Add Vendor'}
           </Button>
         </Box>
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(4, 1fr)' }, gap: 1.5, position: 'relative' }}>
@@ -429,7 +429,11 @@ const PartiesPage = () => {
 
       <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
         <form onSubmit={handleSubmit}>
-          <DialogTitle>{editingParty ? 'Edit Party' : 'Add New Party'}</DialogTitle>
+          <DialogTitle>
+            {editingParty
+              ? `Edit ${formData.type === 'Vendor' ? 'Vendor' : 'Customer'}`
+              : `Add New ${formData.type === 'Vendor' ? 'Vendor' : 'Customer'}`}
+          </DialogTitle>
           <DialogContent dividers>
             <Grid container spacing={2} sx={{ mt: 0 }}>
               <Grid size={{ xs: 12 }}>
@@ -509,7 +513,11 @@ const PartiesPage = () => {
           </DialogContent>
           <DialogActions sx={{ p: 2 }}>
             <Button onClick={handleClose}>Cancel</Button>
-            <Button type="submit" variant="contained">Save Party</Button>
+            <Button type="submit" variant="contained">
+              {editingParty
+                ? `Update ${formData.type === 'Vendor' ? 'Vendor' : 'Customer'}`
+                : `Save ${formData.type === 'Vendor' ? 'Vendor' : 'Customer'}`}
+            </Button>
           </DialogActions>
         </form>
       </Dialog>

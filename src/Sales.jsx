@@ -24,6 +24,7 @@ import {
   FormControlLabel,
   Switch,
   alpha,
+  useMediaQuery,
   ToggleButton,
   ToggleButtonGroup,
   Dialog,
@@ -235,6 +236,7 @@ const GradientButton = ({
 /* ─── Main Component ─── */
 const SalesPage = ({ mode = "sales" }) => {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const tokens = React.useMemo(() => getThemeTokens(theme), [theme]);
   const { confirm, showAlert } = useDialog();
   const isSale = mode === "sales";
@@ -1548,9 +1550,10 @@ const SalesPage = ({ mode = "sales" }) => {
         }
         maxWidth="xs"
         fullWidth
+        fullScreen={isMobile}
         PaperProps={{
           sx: {
-            borderRadius: tokens.radius.xl,
+            borderRadius: isMobile ? 0 : tokens.radius.xl,
             boxShadow: "0 24px 64px rgba(0,0,0,0.15)",
           },
         }}
@@ -1633,9 +1636,10 @@ const SalesPage = ({ mode = "sales" }) => {
         }
         maxWidth="xs"
         fullWidth
+        fullScreen={isMobile}
         PaperProps={{
           sx: {
-            borderRadius: tokens.radius.xl,
+            borderRadius: isMobile ? 0 : tokens.radius.xl,
             boxShadow: "0 24px 64px rgba(0,0,0,0.15)",
           },
         }}
@@ -1842,7 +1846,7 @@ const SalesPage = ({ mode = "sales" }) => {
           <Box sx={{ maxWidth: 1050, mx: "auto", pb: 4 }}>
 
             {/* Header — identical to Customer First */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 2 }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 2, flexWrap: "wrap" }}>
               <Tooltip title="Back to list (Esc)">
                 <IconButton
                   onClick={() => setView("list")}
@@ -1851,7 +1855,7 @@ const SalesPage = ({ mode = "sales" }) => {
                   <ChevronLeft size={20} />
                 </IconButton>
               </Tooltip>
-              <Box sx={{ flex: 1 }}>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
                 <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: "-0.01em" }}>
                   New Sales Invoice
                 </Typography>
@@ -1861,12 +1865,16 @@ const SalesPage = ({ mode = "sales" }) => {
               </Box>
               <ToggleButtonGroup
                 value={entryMode} exclusive onChange={(_e, v) => v && setEntryMode(v)} size="small"
-                sx={{ bgcolor: "rgba(0,0,0,0.04)", p: "3px", borderRadius: tokens.radius.sm, border: "none", "& .MuiToggleButtonGroup-grouped": { border: 0, borderRadius: `${tokens.radius.sm} !important`, mx: 0.25 } }}
+                sx={{
+                  bgcolor: "rgba(0,0,0,0.04)", p: "3px", borderRadius: tokens.radius.sm, border: "none",
+                  width: { xs: "100%", sm: "auto" },
+                  "& .MuiToggleButtonGroup-grouped": { border: 0, borderRadius: `${tokens.radius.sm} !important`, mx: 0.25, flex: { xs: 1, sm: "none" } },
+                }}
               >
-                <ToggleButton value="customer" sx={{ textTransform: "none", fontWeight: 700, px: 2, py: 0.75, fontSize: "0.8rem", "&.Mui-selected": { bgcolor: "white", boxShadow: "0 1px 4px rgba(0,0,0,0.1)", color: tokens.primary } }}>
+                <ToggleButton value="customer" sx={{ textTransform: "none", fontWeight: 700, px: { xs: 1.5, sm: 2 }, py: 0.75, fontSize: "0.8rem", "&.Mui-selected": { bgcolor: "white", boxShadow: "0 1px 4px rgba(0,0,0,0.1)", color: tokens.primary } }}>
                   <Users size={14} style={{ marginRight: 5 }} />Customer First
                 </ToggleButton>
-                <ToggleButton value="product" sx={{ textTransform: "none", fontWeight: 700, px: 2, py: 0.75, fontSize: "0.8rem", "&.Mui-selected": { bgcolor: "white", boxShadow: "0 1px 4px rgba(0,0,0,0.1)", color: tokens.primary } }}>
+                <ToggleButton value="product" sx={{ textTransform: "none", fontWeight: 700, px: { xs: 1.5, sm: 2 }, py: 0.75, fontSize: "0.8rem", "&.Mui-selected": { bgcolor: "white", boxShadow: "0 1px 4px rgba(0,0,0,0.1)", color: tokens.primary } }}>
                   <Package size={14} style={{ marginRight: 5 }} />Product First
                 </ToggleButton>
               </ToggleButtonGroup>
@@ -2176,7 +2184,7 @@ const SalesPage = ({ mode = "sales" }) => {
       <>
         <Box sx={{ pb: 2 }}>
           {/* Page header */}
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 2 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 2, flexWrap: "wrap" }}>
             <Tooltip title="Back to list (Esc)">
               <IconButton
                 onClick={() => setView("list")}
@@ -2193,7 +2201,7 @@ const SalesPage = ({ mode = "sales" }) => {
                 <ChevronLeft size={20} />
               </IconButton>
             </Tooltip>
-            <Box sx={{ flex: 1 }}>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography
                 variant="h6"
                 sx={{ fontWeight: 800, letterSpacing: "-0.01em" }}
@@ -2218,10 +2226,12 @@ const SalesPage = ({ mode = "sales" }) => {
                   bgcolor: "rgba(0,0,0,0.04)",
                   p: "3px",
                   borderRadius: tokens.radius.sm,
+                  width: { xs: "100%", sm: "auto" },
                   "& .MuiToggleButtonGroup-grouped": {
                     border: 0,
                     borderRadius: `${tokens.radius.sm} !important`,
                     mx: 0.25,
+                    flex: { xs: 1, sm: "none" },
                   },
                 }}
               >
@@ -2230,7 +2240,7 @@ const SalesPage = ({ mode = "sales" }) => {
                   sx={{
                     textTransform: "none",
                     fontWeight: 700,
-                    px: 2,
+                    px: { xs: 1.5, sm: 2 },
                     py: 0.75,
                     fontSize: "0.8rem",
                     "&.Mui-selected": {
@@ -2248,7 +2258,7 @@ const SalesPage = ({ mode = "sales" }) => {
                   sx={{
                     textTransform: "none",
                     fontWeight: 700,
-                    px: 2,
+                    px: { xs: 1.5, sm: 2 },
                     py: 0.75,
                     fontSize: "0.8rem",
                     "&.Mui-selected": {
@@ -2488,228 +2498,365 @@ const SalesPage = ({ mode = "sales" }) => {
                   />
                 </Box>
                 <CardContent sx={{ p: 0 }}>
-                  <TableContainer sx={{ overflowX: "auto" }}>
-                    <Table size="small" sx={{ minWidth: 700 }}>
-                      <TableHead sx={{ bgcolor: "rgba(0,0,0,0.018)" }}>
-                        <TableRow>
-                          {[
-                            ["Item / Product", { pl: 3, minWidth: 280 }],
-                            ["Qty", { width: 90, align: "center" }],
-                            ["Rate (₹)", { width: 150, align: "right" }],
-                            ["Disc %", { width: 100, align: "center" }],
-                            ["GST %", { width: 90, align: "center" }],
-                            ["Amount", { width: 130, pr: 3, align: "right" }],
-                            ["", { width: 44 }],
-                          ].map(([label, style], i) => (
-                            <TableCell
-                              key={i}
-                              align={style.align}
+                  {isMobile ? (
+                    /* ── Mobile: card-per-item ── */
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25, p: 1.5 }}>
+                      {items.map((item, index) => (
+                        <Paper
+                          key={index}
+                          variant="outlined"
+                          sx={{
+                            p: 1.5,
+                            borderRadius: tokens.radius.md,
+                            borderColor: "divider",
+                            "&:hover": { borderColor: tokens.primaryBorder },
+                          }}
+                        >
+                          {/* Item selector */}
+                          <ItemSelect
+                            options={stockItems}
+                            value={
+                              item.itemId
+                                ? stockItems.find((i) => i.id === item.itemId) || null
+                                : item.name || null
+                            }
+                            onChange={(v) => {
+                              if (typeof v === "string") {
+                                const newItems = [...items];
+                                newItems[index] = { ...newItems[index], itemId: "", name: v };
+                                setItems(newItems);
+                                return;
+                              }
+                              updateItemRow(index, "itemId", v?.id);
+                            }}
+                            onInputChange={(val) => {
+                              if (!item.itemId) {
+                                const newItems = [...items];
+                                newItems[index] = { ...newItems[index], name: val };
+                                setItems(newItems);
+                              }
+                            }}
+                            onAddNew={(inputValue) =>
+                              openQuickAddItem(inputValue, (newItem) =>
+                                updateItemRow(index, "itemId", newItem.id),
+                              )
+                            }
+                            isSale={isSale}
+                            canViewPurchasePrice={canViewPurchasePrice}
+                            placeholder="Search or select item…"
+                            sx={inputSx}
+                          />
+                          {/* Qty + Rate row */}
+                          <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, mt: 1 }}>
+                            <TextField
+                              type="number"
+                              size="small"
+                              label="Qty"
+                              value={item.qty}
+                              onChange={(e) =>
+                                updateItemRow(index, "qty", e.target.value === "" ? "" : Number(e.target.value))
+                              }
+                              onFocus={(e) => e.target.select()}
+                              slotProps={{ input: { min: 0, step: 1 } }}
+                              sx={inputSx}
+                            />
+                            <TextField
+                              type="number"
+                              size="small"
+                              label="Rate (₹)"
+                              value={item.price}
+                              placeholder="0.00"
+                              onChange={(e) => updateItemRow(index, "price", e.target.value)}
+                              onFocus={(e) => e.target.select()}
+                              slotProps={{
+                                input: {
+                                  startAdornment: (
+                                    <InputAdornment position="start">
+                                      <Typography variant="body2" sx={{ color: "text.secondary", fontWeight: 600 }}>₹</Typography>
+                                    </InputAdornment>
+                                  ),
+                                  min: 0,
+                                  step: 0.01,
+                                },
+                              }}
+                              sx={inputSx}
+                            />
+                          </Box>
+                          {/* Disc % + GST + Amount + Delete */}
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1 }}>
+                            <TextField
+                              type="number"
+                              size="small"
+                              label="Disc %"
+                              value={item.discountPercent ?? ""}
+                              placeholder="0"
+                              onChange={(e) => updateItemRow(index, "discountPercent", e.target.value)}
+                              onFocus={(e) => e.target.select()}
+                              slotProps={{ input: { min: 0, max: 100, step: 0.5 } }}
+                              sx={{ width: 88, ...inputSx }}
+                            />
+                            <Box
                               sx={{
-                                fontWeight: 700,
-                                fontSize: "0.7rem",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.06em",
-                                color: "text.secondary",
-                                ...style,
+                                display: "inline-flex",
+                                px: 1,
+                                py: 0.4,
+                                borderRadius: "100px",
+                                bgcolor: item.taxRate > 0 ? tokens.primarySoft : "rgba(0,0,0,0.04)",
+                                border: "1px solid",
+                                borderColor: item.taxRate > 0 ? tokens.primaryBorder : "transparent",
                               }}
                             >
-                              {label}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {items.map((item, index) => (
-                          <TableRow
-                            key={index}
-                            sx={{
-                              "&:hover": { bgcolor: "rgba(79,70,229,0.025)" },
-                              transition: "background 0.12s",
-                            }}
-                          >
-                            <TableCell sx={{ pl: 3, py: 1.25 }}>
-                              <ItemSelect
-                                options={stockItems}
-                                value={
-                                  item.itemId
-                                    ? stockItems.find((i) => i.id === item.itemId) || null
-                                    : item.name || null
-                                }
-                                onChange={(v) => {
-                                  if (typeof v === "string") {
-                                    const newItems = [...items];
-                                    newItems[index] = { ...newItems[index], itemId: "", name: v };
-                                    setItems(newItems);
-                                    return;
-                                  }
-                                  updateItemRow(index, "itemId", v?.id);
-                                }}
-                                onInputChange={(val) => {
-                                  if (!item.itemId) {
-                                    const newItems = [...items];
-                                    newItems[index] = { ...newItems[index], name: val };
-                                    setItems(newItems);
-                                  }
-                                }}
-                                onAddNew={(inputValue) =>
-                                  openQuickAddItem(inputValue, (newItem) =>
-                                    updateItemRow(index, "itemId", newItem.id),
-                                  )
-                                }
-                                isSale={isSale}
-                                canViewPurchasePrice={canViewPurchasePrice}
-                                placeholder="Search or select item…"
-                                sx={inputSx}
-                              />
-                            </TableCell>
-                            <TableCell align="center" sx={{ py: 1.25 }}>
-                              <TextField
-                                type="number"
-                                size="small"
-                                value={item.qty}
-                                onChange={(e) =>
-                                  updateItemRow(
-                                    index,
-                                    "qty",
-                                    e.target.value === ""
-                                      ? ""
-                                      : Number(e.target.value),
-                                  )
-                                }
-                                onFocus={(e) => e.target.select()}
-                                slotProps={{
-                                  input: {
-                                    style: { textAlign: "center" },
-                                    min: 0,
-                                    step: 1,
-                                  },
-                                }}
-                                sx={{ width: 74, ...inputSx }}
-                              />
-                            </TableCell>
-                            <TableCell align="right" sx={{ py: 1.25 }}>
-                              <TextField
-                                type="number"
-                                size="small"
-                                value={item.price}
-                                placeholder="0.00"
-                                onChange={(e) =>
-                                  updateItemRow(index, "price", e.target.value)
-                                }
-                                onFocus={(e) => e.target.select()}
-                                slotProps={{
-                                  input: {
-                                    startAdornment: (
-                                      <InputAdornment position="start">
-                                        <Typography
-                                          variant="body2"
-                                          sx={{
-                                            color: "text.secondary",
-                                            fontWeight: 600,
-                                          }}
-                                        >
-                                          ₹
-                                        </Typography>
-                                      </InputAdornment>
-                                    ),
-                                    style: { textAlign: "right" },
-                                    min: 0,
-                                    step: 0.01,
-                                  },
-                                }}
-                                sx={{ width: 130, ...inputSx }}
-                              />
-                            </TableCell>
-                            <TableCell align="center" sx={{ py: 1.25 }}>
-                              <TextField
-                                type="number"
-                                size="small"
-                                value={item.discountPercent ?? ""}
-                                placeholder="0"
-                                onChange={(e) =>
-                                  updateItemRow(
-                                    index,
-                                    "discountPercent",
-                                    e.target.value,
-                                  )
-                                }
-                                onFocus={(e) => e.target.select()}
-                                slotProps={{
-                                  input: {
-                                    style: { textAlign: "center" },
-                                    min: 0,
-                                    max: 100,
-                                    step: 0.5,
-                                  },
-                                }}
-                                sx={{ width: 84, ...inputSx }}
-                              />
-                            </TableCell>
-                            <TableCell align="center" sx={{ py: 1.25 }}>
-                              <Box
+                              <Typography
+                                variant="caption"
+                                sx={{ fontWeight: 700, color: item.taxRate > 0 ? tokens.primary : "text.secondary" }}
+                              >
+                                GST {item.taxRate || 0}%
+                              </Typography>
+                            </Box>
+                            <Box sx={{ flex: 1 }} />
+                            <Typography variant="body1" sx={{ fontWeight: 800, color: tokens.primary }}>
+                              ₹{(item.total || 0).toFixed(2)}
+                            </Typography>
+                            <IconButton
+                              size="small"
+                              onClick={() => removeItemRow(index)}
+                              sx={{
+                                color: "text.disabled",
+                                "&:hover": { color: tokens.error, bgcolor: `${tokens.error}12` },
+                                borderRadius: tokens.radius.sm,
+                              }}
+                            >
+                              <Trash2 size={15} />
+                            </IconButton>
+                          </Box>
+                        </Paper>
+                      ))}
+                    </Box>
+                  ) : (
+                    /* ── Desktop: table ── */
+                    <TableContainer sx={{ overflowX: "auto" }}>
+                      <Table size="small" sx={{ minWidth: 700 }}>
+                        <TableHead sx={{ bgcolor: "rgba(0,0,0,0.018)" }}>
+                          <TableRow>
+                            {[
+                              ["Item / Product", { pl: 3, minWidth: 280 }],
+                              ["Qty", { width: 90, align: "center" }],
+                              ["Rate (₹)", { width: 150, align: "right" }],
+                              ["Disc %", { width: 100, align: "center" }],
+                              ["GST %", { width: 90, align: "center" }],
+                              ["Amount", { width: 130, pr: 3, align: "right" }],
+                              ["", { width: 44 }],
+                            ].map(([label, style], i) => (
+                              <TableCell
+                                key={i}
+                                align={style.align}
                                 sx={{
-                                  display: "inline-flex",
-                                  px: 1,
-                                  py: 0.3,
-                                  borderRadius: "100px",
-                                  bgcolor:
-                                    item.taxRate > 0
-                                      ? tokens.primarySoft
-                                      : "rgba(0,0,0,0.04)",
-                                  border: "1px solid",
-                                  borderColor:
-                                    item.taxRate > 0
-                                      ? tokens.primaryBorder
-                                      : "transparent",
+                                  fontWeight: 700,
+                                  fontSize: "0.7rem",
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.06em",
+                                  color: "text.secondary",
+                                  ...style,
                                 }}
                               >
-                                <Typography
-                                  variant="caption"
+                                {label}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {items.map((item, index) => (
+                            <TableRow
+                              key={index}
+                              sx={{
+                                "&:hover": { bgcolor: "rgba(79,70,229,0.025)" },
+                                transition: "background 0.12s",
+                              }}
+                            >
+                              <TableCell sx={{ pl: 3, py: 1.25 }}>
+                                <ItemSelect
+                                  options={stockItems}
+                                  value={
+                                    item.itemId
+                                      ? stockItems.find((i) => i.id === item.itemId) || null
+                                      : item.name || null
+                                  }
+                                  onChange={(v) => {
+                                    if (typeof v === "string") {
+                                      const newItems = [...items];
+                                      newItems[index] = { ...newItems[index], itemId: "", name: v };
+                                      setItems(newItems);
+                                      return;
+                                    }
+                                    updateItemRow(index, "itemId", v?.id);
+                                  }}
+                                  onInputChange={(val) => {
+                                    if (!item.itemId) {
+                                      const newItems = [...items];
+                                      newItems[index] = { ...newItems[index], name: val };
+                                      setItems(newItems);
+                                    }
+                                  }}
+                                  onAddNew={(inputValue) =>
+                                    openQuickAddItem(inputValue, (newItem) =>
+                                      updateItemRow(index, "itemId", newItem.id),
+                                    )
+                                  }
+                                  isSale={isSale}
+                                  canViewPurchasePrice={canViewPurchasePrice}
+                                  placeholder="Search or select item…"
+                                  sx={inputSx}
+                                />
+                              </TableCell>
+                              <TableCell align="center" sx={{ py: 1.25 }}>
+                                <TextField
+                                  type="number"
+                                  size="small"
+                                  value={item.qty}
+                                  onChange={(e) =>
+                                    updateItemRow(
+                                      index,
+                                      "qty",
+                                      e.target.value === ""
+                                        ? ""
+                                        : Number(e.target.value),
+                                    )
+                                  }
+                                  onFocus={(e) => e.target.select()}
+                                  slotProps={{
+                                    input: {
+                                      style: { textAlign: "center" },
+                                      min: 0,
+                                      step: 1,
+                                    },
+                                  }}
+                                  sx={{ width: 74, ...inputSx }}
+                                />
+                              </TableCell>
+                              <TableCell align="right" sx={{ py: 1.25 }}>
+                                <TextField
+                                  type="number"
+                                  size="small"
+                                  value={item.price}
+                                  placeholder="0.00"
+                                  onChange={(e) =>
+                                    updateItemRow(index, "price", e.target.value)
+                                  }
+                                  onFocus={(e) => e.target.select()}
+                                  slotProps={{
+                                    input: {
+                                      startAdornment: (
+                                        <InputAdornment position="start">
+                                          <Typography
+                                            variant="body2"
+                                            sx={{
+                                              color: "text.secondary",
+                                              fontWeight: 600,
+                                            }}
+                                          >
+                                            ₹
+                                          </Typography>
+                                        </InputAdornment>
+                                      ),
+                                      style: { textAlign: "right" },
+                                      min: 0,
+                                      step: 0.01,
+                                    },
+                                  }}
+                                  sx={{ width: 130, ...inputSx }}
+                                />
+                              </TableCell>
+                              <TableCell align="center" sx={{ py: 1.25 }}>
+                                <TextField
+                                  type="number"
+                                  size="small"
+                                  value={item.discountPercent ?? ""}
+                                  placeholder="0"
+                                  onChange={(e) =>
+                                    updateItemRow(
+                                      index,
+                                      "discountPercent",
+                                      e.target.value,
+                                    )
+                                  }
+                                  onFocus={(e) => e.target.select()}
+                                  slotProps={{
+                                    input: {
+                                      style: { textAlign: "center" },
+                                      min: 0,
+                                      max: 100,
+                                      step: 0.5,
+                                    },
+                                  }}
+                                  sx={{ width: 84, ...inputSx }}
+                                />
+                              </TableCell>
+                              <TableCell align="center" sx={{ py: 1.25 }}>
+                                <Box
                                   sx={{
-                                    fontWeight: 700,
-                                    color:
+                                    display: "inline-flex",
+                                    px: 1,
+                                    py: 0.3,
+                                    borderRadius: "100px",
+                                    bgcolor:
                                       item.taxRate > 0
-                                        ? tokens.primary
-                                        : "text.secondary",
+                                        ? tokens.primarySoft
+                                        : "rgba(0,0,0,0.04)",
+                                    border: "1px solid",
+                                    borderColor:
+                                      item.taxRate > 0
+                                        ? tokens.primaryBorder
+                                        : "transparent",
                                   }}
                                 >
-                                  {item.taxRate || 0}%
+                                  <Typography
+                                    variant="caption"
+                                    sx={{
+                                      fontWeight: 700,
+                                      color:
+                                        item.taxRate > 0
+                                          ? tokens.primary
+                                          : "text.secondary",
+                                    }}
+                                  >
+                                    {item.taxRate || 0}%
+                                  </Typography>
+                                </Box>
+                              </TableCell>
+                              <TableCell align="right" sx={{ pr: 3, py: 1.25 }}>
+                                <Typography
+                                  variant="body2"
+                                  sx={{ fontWeight: 800, color: tokens.primary }}
+                                >
+                                  ₹{(item.total || 0).toFixed(2)}
                                 </Typography>
-                              </Box>
-                            </TableCell>
-                            <TableCell align="right" sx={{ pr: 3, py: 1.25 }}>
-                              <Typography
-                                variant="body2"
-                                sx={{ fontWeight: 800, color: tokens.primary }}
-                              >
-                                ₹{(item.total || 0).toFixed(2)}
-                              </Typography>
-                            </TableCell>
-                            <TableCell sx={{ pr: 1 }}>
-                              <IconButton
-                                size="small"
-                                onClick={() => removeItemRow(index)}
-                                sx={{
-                                  color: "text.disabled",
-                                  "&:hover": {
-                                    color: tokens.error,
-                                    bgcolor: `${tokens.error}12`,
-                                  },
-                                  borderRadius: tokens.radius.sm,
-                                }}
-                              >
-                                <Trash2 size={15} />
-                              </IconButton>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
+                              </TableCell>
+                              <TableCell sx={{ pr: 1 }}>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => removeItemRow(index)}
+                                  sx={{
+                                    color: "text.disabled",
+                                    "&:hover": {
+                                      color: tokens.error,
+                                      bgcolor: `${tokens.error}12`,
+                                    },
+                                    borderRadius: tokens.radius.sm,
+                                  }}
+                                >
+                                  <Trash2 size={15} />
+                                </IconButton>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  )}
 
                   <Box
                     sx={{
-                      px: 2.5,
+                      px: 2,
                       py: 1.5,
                       display: "flex",
                       alignItems: "center",
@@ -2723,7 +2870,8 @@ const SalesPage = ({ mode = "sales" }) => {
                       startIcon={<Plus size={16} />}
                       onClick={addItemRow}
                       variant="outlined"
-                      size="small"
+                      size={isMobile ? "medium" : "small"}
+                      fullWidth={isMobile}
                       sx={{
                         fontWeight: 700,
                         borderRadius: tokens.radius.sm,
@@ -2743,7 +2891,8 @@ const SalesPage = ({ mode = "sales" }) => {
                         startIcon={<ScanLine size={15} />}
                         onClick={() => setScannerOpen(true)}
                         variant="outlined"
-                        size="small"
+                        size={isMobile ? "medium" : "small"}
+                        fullWidth={isMobile}
                         sx={{
                           fontWeight: 700,
                           borderRadius: tokens.radius.sm,
@@ -2753,13 +2902,15 @@ const SalesPage = ({ mode = "sales" }) => {
                         Scan Barcode
                       </Button>
                     )}
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ ml: 0.5 }}
-                    >
-                      Click a field and type to replace
-                    </Typography>
+                    {!isMobile && (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ ml: 0.5 }}
+                      >
+                        Click a field and type to replace
+                      </Typography>
+                    )}
                   </Box>
 
                   <Box
@@ -3218,61 +3369,63 @@ const SalesPage = ({ mode = "sales" }) => {
                       </Button>
                     )}
 
-                    <Box
-                      sx={{
-                        mt: 1.25,
-                        pt: 1.25,
-                        borderTop: "1px solid rgba(0,0,0,0.07)",
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 0.75,
-                        justifyContent: "center",
-                      }}
-                    >
-                      {[
-                        {
-                          key: "Ctrl+S",
-                          label: view === "edit" ? "Update" : "Save",
-                        },
-                        ...(view === "create"
-                          ? [{ key: "Ctrl+↵", label: "Save & New" }]
-                          : []),
-                        { key: "Esc", label: "Back" },
-                      ].map((s) => (
-                        <Box
-                          key={s.key}
-                          sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 0.4,
-                          }}
-                        >
+                    {!isMobile && (
+                      <Box
+                        sx={{
+                          mt: 1.25,
+                          pt: 1.25,
+                          borderTop: "1px solid rgba(0,0,0,0.07)",
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 0.75,
+                          justifyContent: "center",
+                        }}
+                      >
+                        {[
+                          {
+                            key: "Ctrl+S",
+                            label: view === "edit" ? "Update" : "Save",
+                          },
+                          ...(view === "create"
+                            ? [{ key: "Ctrl+↵", label: "Save & New" }]
+                            : []),
+                          { key: "Esc", label: "Back" },
+                        ].map((s) => (
                           <Box
-                            component="kbd"
+                            key={s.key}
                             sx={{
-                              px: 0.8,
-                              py: 0.25,
-                              borderRadius: "5px",
-                              bgcolor: "rgba(0,0,0,0.06)",
-                              border: "1px solid rgba(0,0,0,0.12)",
-                              fontSize: "0.6rem",
-                              fontFamily: "monospace",
-                              fontWeight: 800,
-                              color: "text.secondary",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 0.4,
                             }}
                           >
-                            {s.key}
+                            <Box
+                              component="kbd"
+                              sx={{
+                                px: 0.8,
+                                py: 0.25,
+                                borderRadius: "5px",
+                                bgcolor: "rgba(0,0,0,0.06)",
+                                border: "1px solid rgba(0,0,0,0.12)",
+                                fontSize: "0.6rem",
+                                fontFamily: "monospace",
+                                fontWeight: 800,
+                                color: "text.secondary",
+                              }}
+                            >
+                              {s.key}
+                            </Box>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ fontSize: "0.68rem" }}
+                            >
+                              {s.label}
+                            </Typography>
                           </Box>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{ fontSize: "0.68rem" }}
-                          >
-                            {s.label}
-                          </Typography>
-                        </Box>
-                      ))}
-                    </Box>
+                        ))}
+                      </Box>
+                    )}
                   </CardContent>
                 </Card>
               </Box>
@@ -3669,7 +3822,7 @@ const SalesPage = ({ mode = "sales" }) => {
           boxShadow: tokens.shadow.card,
         }}
       >
-        <TableContainer>
+        <TableContainer sx={{ overflowX: 'auto' }}>
           <Table sx={{ minWidth: 650 }}>
             <TableHead>
               <TableRow
@@ -4222,11 +4375,12 @@ const SalesPage = ({ mode = "sales" }) => {
         onClose={() => setPreviewOpen(false)}
         maxWidth="md"
         fullWidth
+        fullScreen={isMobile}
         PaperProps={{
           sx: {
-            borderRadius: tokens.radius.xl,
+            borderRadius: isMobile ? 0 : tokens.radius.xl,
             overflow: "hidden",
-            maxHeight: "92vh",
+            maxHeight: isMobile ? '100vh' : "92vh",
             display: "flex",
             flexDirection: "column",
             boxShadow: "0 32px 80px rgba(0,0,0,0.22)",

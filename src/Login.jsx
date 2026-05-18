@@ -122,11 +122,11 @@ const Login = () => {
           <Paper
             elevation={24}
             sx={{
-              p: 4,
+              p: { xs: 3, sm: 4 },
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              borderRadius: 5,
+              borderRadius: { xs: 4, sm: 5 },
               background: 'rgba(255,255,255,0.05)',
               backdropFilter: 'blur(20px)',
               border: '1px solid rgba(255,255,255,0.1)',
@@ -135,10 +135,10 @@ const Login = () => {
           >
             {/* Logo */}
             <Box sx={{
-              mb: 2.5,
+              mb: 2,
               filter: 'drop-shadow(0 8px 24px rgba(79,70,229,0.5))',
             }}>
-              <SoloBooksLogo size={72} />
+              <SoloBooksLogo size={60} />
             </Box>
 
             <Typography variant="h5" sx={{ fontWeight: 800, color: 'white', mb: 0.5, letterSpacing: '0.05em' }}>
@@ -222,7 +222,7 @@ const Login = () => {
                   fullWidth
                   value={businessCode}
                   onChange={e => setBusinessCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                  inputProps={{ maxLength: 6, style: { letterSpacing: 4, fontWeight: 700, fontSize: '1.1rem', color: 'white' } }}
+                  inputProps={{ maxLength: 6, style: { letterSpacing: 2, fontWeight: 700, fontSize: '1rem', color: 'white' } }}
                   placeholder="e.g. ABC123"
                   sx={glassInput}
                 />

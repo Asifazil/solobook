@@ -1,13 +1,13 @@
 import React, { useMemo } from 'react';
 import {
   Box, Typography, Grid, Card, CardContent,
-  useTheme, Stack, Button, alpha, Divider, Menu, MenuItem,
-  Chip, Avatar,
+  useTheme, useMediaQuery, Stack, Button, alpha, Divider, Menu, MenuItem,
+  Chip, Avatar, Dialog, DialogContent, IconButton,
 } from '@mui/material';
 import {
   ArrowUpRight, ArrowDownRight,
   Plus, FileText, ReceiptText, ShoppingBag, Download, Upload, DollarSign, TrendingUp,
-  Bell, Clock,
+  Bell, Clock, QrCode, X,
 } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
 import { useData } from './DataContext';
@@ -88,11 +88,13 @@ const ChartTooltip = ({ active, payload, label }) => {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 const Dashboard = () => {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { currentBusiness } = useBusiness();
   const { getItems } = useData();
   const navigate = useNavigate();
   const [anchorEl, setAnchorEl] = React.useState(null);
   const [period, setPeriod] = React.useState('week');
+  const [qrOpen, setQrOpen] = React.useState(false);
 
   const handleMenuOpen = (e) => setAnchorEl(e.currentTarget);
   const handleMenuClose = () => setAnchorEl(null);
@@ -230,34 +232,78 @@ const Dashboard = () => {
         <Box sx={{ position: 'absolute', bottom: -70, right: 130, width: 260, height: 260, borderRadius: '50%', bgcolor: alpha('#10b981', 0.06) }} />
         <Box sx={{ position: 'absolute', top: 15, right: 230, width: 90, height: 90, borderRadius: '50%', bgcolor: alpha('#f43f5e', 0.09) }} />
 
-        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={2.5} sx={{ position: 'relative', zIndex: 1 }}>
-          <Box>
-            <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.25rem', sm: '1.5rem' }, letterSpacing: '-0.025em', color: 'white', lineHeight: 1.2 }}>
-              {currentBusiness?.name || 'Your Business'}
-            </Typography>
-            <Typography sx={{ color: 'rgba(255,255,255,0.42)', mt: 0.5, fontSize: '0.8125rem' }}>
-              {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-            </Typography>
-          </Box>
-          <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={2} sx={{ position: 'relative', zIndex: 1 }}>
+          <Stack direction="row" alignItems="center" gap={1.5}>
+            {currentBusiness?.logo && (
+              <Box sx={{
+                width: { xs: 44, sm: 54 },
+                height: { xs: 44, sm: 54 },
+                borderRadius: 2,
+                bgcolor: 'white',
+                flexShrink: 0,
+                overflow: 'hidden',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 16px rgba(0,0,0,0.3)',
+                border: '1.5px solid rgba(255,255,255,0.18)',
+              }}>
+                <img
+                  src={currentBusiness.logo}
+                  alt={currentBusiness.name}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              </Box>
+            )}
+            <Box>
+              <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.1rem', sm: '1.5rem' }, letterSpacing: '-0.025em', color: 'white', lineHeight: 1.2 }}>
+                {currentBusiness?.name || 'Your Business'}
+              </Typography>
+              <Typography sx={{ color: 'rgba(255,255,255,0.42)', mt: 0.5, fontSize: { xs: '0.72rem', sm: '0.8125rem' } }}>
+                {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              </Typography>
+            </Box>
+          </Stack>
+          <Stack direction="row" spacing={1} alignItems="center" justifyContent={{ xs: 'space-between', sm: 'flex-end' }}>
             {/* Period pills */}
-            <Box sx={{ display: 'flex', bgcolor: 'rgba(255,255,255,0.07)', borderRadius: 2, p: 0.5, gap: 0.25, border: '1px solid rgba(255,255,255,0.1)' }}>
+            <Box sx={{ display: 'flex', bgcolor: 'rgba(255,255,255,0.07)', borderRadius: 2, p: 0.4, gap: 0.25, border: '1px solid rgba(255,255,255,0.1)' }}>
               {['day', 'week', 'month', 'year'].map(p => (
                 <Box key={p} onClick={() => setPeriod(p)} sx={{
-                  px: 1.5, py: 0.625, borderRadius: 1.5, cursor: 'pointer', userSelect: 'none',
+                  px: { xs: 0.875, sm: 1.5 }, py: 0.625, borderRadius: 1.5, cursor: 'pointer', userSelect: 'none',
                   bgcolor: period === p ? 'rgba(255,255,255,0.18)' : 'transparent',
                   color: period === p ? 'white' : 'rgba(255,255,255,0.42)',
-                  fontWeight: period === p ? 700 : 500, fontSize: '0.78rem',
+                  fontWeight: period === p ? 700 : 500, fontSize: { xs: '0.72rem', sm: '0.78rem' },
                   transition: 'all 0.15s ease',
+                  minWidth: { xs: 36, sm: 'auto' },
+                  textAlign: 'center',
                   '&:hover': { bgcolor: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)' },
                 }}>
-                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                  {isMobile ? p.charAt(0).toUpperCase() : (p.charAt(0).toUpperCase() + p.slice(1))}
                 </Box>
               ))}
             </Box>
+            {currentBusiness?.qrCode && (
+              <Button
+                variant="outlined"
+                startIcon={<QrCode size={16} />}
+                onClick={() => setQrOpen(true)}
+                sx={{
+                  color: 'white',
+                  borderColor: 'rgba(255,255,255,0.35)',
+                  fontWeight: 700,
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' },
+                }}
+              >
+                {isMobile ? 'QR' : 'Show QR'}
+              </Button>
+            )}
             <Button variant="contained" startIcon={<Plus size={16} />} onClick={handleMenuOpen}
-              sx={{ bgcolor: 'white', color: '#0f172a', fontWeight: 700, borderRadius: 2, textTransform: 'none', boxShadow: '0 2px 12px rgba(0,0,0,0.3)', '&:hover': { bgcolor: 'rgba(255,255,255,0.92)' } }}>
-              New Entry
+              sx={{ bgcolor: 'white', color: '#0f172a', fontWeight: 700, borderRadius: 2, textTransform: 'none', boxShadow: '0 2px 12px rgba(0,0,0,0.3)', '&:hover': { bgcolor: 'rgba(255,255,255,0.92)' }, whiteSpace: 'nowrap', flexShrink: 0 }}>
+              {isMobile ? 'New' : 'New Entry'}
             </Button>
           </Stack>
         </Stack>
@@ -273,8 +319,71 @@ const Dashboard = () => {
         <MenuItem dense onClick={() => handleMenuItemClick('/payment-out')}><Upload size={16} style={{ marginRight: 10, color: '#d97706' }} />Payment Made</MenuItem>
       </Menu>
 
-      {/* ── Metric cards (CSS grid: 2 → 3 → 5 cols) ── */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)', lg: 'repeat(5, 1fr)' }, gap: 2, mb: 3 }}>
+      {/* ── QR Code Dialog ── */}
+      <Dialog
+        open={qrOpen}
+        onClose={() => setQrOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 4,
+            overflow: 'hidden',
+            background: 'linear-gradient(160deg, #0f172a 0%, #1e293b 100%)',
+          }
+        }}
+      >
+        <DialogContent sx={{ p: 0 }}>
+          {/* Header */}
+          <Box sx={{ px: 3, pt: 3, pb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+              <Box sx={{ p: 1, borderRadius: 1.5, bgcolor: alpha('#6366f1', 0.2), display: 'flex' }}>
+                <QrCode size={18} color="#818cf8" />
+              </Box>
+              <Box>
+                <Typography sx={{ fontWeight: 800, color: 'white', fontSize: '0.95rem', lineHeight: 1.2 }}>
+                  Scan to Pay
+                </Typography>
+                {currentBusiness?.name && (
+                  <Typography sx={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.72rem', mt: 0.25 }}>
+                    {currentBusiness.name}
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+            <IconButton onClick={() => setQrOpen(false)} size="small" sx={{ color: 'rgba(255,255,255,0.5)', '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.08)' } }}>
+              <X size={18} />
+            </IconButton>
+          </Box>
+
+          {/* QR Image */}
+          <Box sx={{ px: 3, pb: 1.5, display: 'flex', justifyContent: 'center' }}>
+            <Box sx={{
+              bgcolor: 'white',
+              borderRadius: 3,
+              p: 2.5,
+              display: 'inline-flex',
+              boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+            }}>
+              <img
+                src={currentBusiness?.qrCode}
+                alt="Payment QR"
+                style={{ width: 240, height: 240, objectFit: 'contain', display: 'block' }}
+              />
+            </Box>
+          </Box>
+
+          {/* Footer hint */}
+          <Box sx={{ px: 3, pt: 1, pb: 3, textAlign: 'center' }}>
+            <Typography sx={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.72rem', letterSpacing: '0.03em' }}>
+              Point your camera at the QR code to pay
+            </Typography>
+          </Box>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Metric cards (CSS grid: 2 → 3 → 5 cols; 5th card full-width on xs) ── */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)', lg: 'repeat(5, 1fr)' }, gap: { xs: 1.25, sm: 2 }, mb: { xs: 2, sm: 3 } }}>
         {CARD_DEFS.map(({ key, trendKey, ...card }) => (
           <MetricCard key={key} {...card}
             value={stats[key]}
@@ -307,9 +416,9 @@ const Dashboard = () => {
                 ))}
               </Stack>
             </Box>
-            <Box sx={{ p: { xs: 1.5, sm: 2.5 }, height: { xs: 240, sm: 290 } }}>
+            <Box sx={{ p: { xs: 1, sm: 2.5 }, height: { xs: 220, sm: 290 } }}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={stats.chartData} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
+                <AreaChart data={stats.chartData} margin={{ top: 8, right: 4, left: isMobile ? -28 : -18, bottom: 0 }}>
                   <defs>
                     <linearGradient id="gSales" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#6366f1" stopOpacity={0.22} />

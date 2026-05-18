@@ -5,7 +5,7 @@ import {
   Box, Drawer, AppBar, Toolbar, List, Typography, Divider, IconButton,
   ListItem, ListItemButton, ListItemIcon, ListItemText, Avatar, Menu, MenuItem,
   Tooltip, useTheme, useMediaQuery, Button, Dialog, DialogTitle, DialogContent,
-  DialogActions, TextField, Alert, alpha, Popover
+  DialogActions, TextField, Alert, alpha, Popover, BottomNavigation, BottomNavigationAction, Paper
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -110,6 +110,7 @@ const NavItem = ({ item, isActive, onClick }) => (
 const Layout = ({ children }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isXs = useMediaQuery(theme.breakpoints.down('sm'));
   const [open, setOpen] = useState(!isMobile);
   const [businessMenuAnchor, setBusinessMenuAnchor] = useState(null);
   const [userMenuAnchor, setUserMenuAnchor] = useState(null);
@@ -436,10 +437,10 @@ const Layout = ({ children }) => {
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 0.75,
+                    gap: { xs: 0, sm: 0.75 },
                     mr: 1,
-                    pl: 1.25,
-                    pr: 1,
+                    pl: { xs: 0.875, sm: 1.25 },
+                    pr: { xs: 0.75, sm: 1 },
                     py: 0.5,
                     borderRadius: 1.5,
                     cursor: 'pointer',
@@ -458,9 +459,10 @@ const Layout = ({ children }) => {
                   }}
                 >
                   <CalendarRange
-                    size={13}
+                    size={14}
                     style={{ color: isAll ? theme.palette.text.secondary : theme.palette.primary.main, flexShrink: 0 }}
                   />
+                  {/* Label hidden on xs — icon only on mobile */}
                   <Typography
                     variant="caption"
                     sx={{
@@ -469,11 +471,13 @@ const Layout = ({ children }) => {
                       whiteSpace: 'nowrap',
                       color: isAll ? 'text.secondary' : 'primary.main',
                       letterSpacing: '0.01em',
+                      display: { xs: 'none', sm: 'inline' },
+                      ml: 0.75,
                     }}
                   >
                     {isAll ? 'All Time' : activeFYLabel}
                   </Typography>
-                  <ChevronDown size={11} style={{ color: isAll ? theme.palette.text.disabled : theme.palette.primary.main, flexShrink: 0 }} />
+                  <ChevronDown size={11} style={{ color: isAll ? theme.palette.text.disabled : theme.palette.primary.main, flexShrink: 0, marginLeft: 2 }} />
                 </Box>
 
                 <Popover
@@ -487,6 +491,7 @@ const Layout = ({ children }) => {
                     sx: {
                       mt: 0.75,
                       minWidth: 220,
+                      maxWidth: 'calc(100vw - 24px)',
                       borderRadius: 2,
                       border: '1px solid',
                       borderColor: 'divider',
@@ -714,6 +719,7 @@ const Layout = ({ children }) => {
         sx={{
           flexGrow: 1,
           p: { xs: 1.5, sm: 2, md: 2.5 },
+          pb: { xs: isXs ? '72px' : 1.5, sm: 2, md: 2.5 },
           width: { xs: '100%', md: `calc(100% - ${open ? drawerWidth : 0}px)` },
           mt: '52px',
           minWidth: 0,
@@ -722,6 +728,97 @@ const Layout = ({ children }) => {
       >
         {children}
       </Box>
+
+      {/* ── Mobile bottom navigation bar (xs only) ── */}
+      {isXs && (
+        <Paper
+          elevation={8}
+          sx={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: theme.zIndex.appBar,
+            borderTop: '1px solid',
+            borderColor: 'divider',
+            overflow: 'hidden',
+          }}
+        >
+          <BottomNavigation
+            value={location.pathname}
+            onChange={(_, path) => navigate(path)}
+            sx={{ height: 60, pr: '64px' }}
+          >
+            {config.features?.dashboard && (
+              <BottomNavigationAction
+                label="Home"
+                value="/"
+                icon={<LayoutDashboard size={22} />}
+                sx={{ minWidth: 0, '& .MuiBottomNavigationAction-label': { fontSize: '0.62rem' } }}
+              />
+            )}
+            {config.features?.sales && (
+              <BottomNavigationAction
+                label="Sales"
+                value="/sales"
+                icon={<ReceiptText size={22} />}
+                sx={{ minWidth: 0, '& .MuiBottomNavigationAction-label': { fontSize: '0.62rem' } }}
+              />
+            )}
+            {config.features?.purchases && (
+              <BottomNavigationAction
+                label="Purchases"
+                value="/purchases"
+                icon={<ShoppingBag size={22} />}
+                sx={{ minWidth: 0, '& .MuiBottomNavigationAction-label': { fontSize: '0.62rem' } }}
+              />
+            )}
+            {config.features?.parties && (
+              <BottomNavigationAction
+                label="Parties"
+                value="/parties"
+                icon={<Users size={22} />}
+                sx={{ minWidth: 0, '& .MuiBottomNavigationAction-label': { fontSize: '0.62rem' } }}
+              />
+            )}
+            {config.features?.items && (
+              <BottomNavigationAction
+                label="Items"
+                value="/items"
+                icon={<Package size={22} />}
+                sx={{ minWidth: 0, '& .MuiBottomNavigationAction-label': { fontSize: '0.62rem' } }}
+              />
+            )}
+          </BottomNavigation>
+
+          {/* "More" drawer trigger — lives outside BottomNavigation so it never hijacks the route value */}
+          <Box
+            onClick={() => setOpen(true)}
+            sx={{
+              position: 'absolute',
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: 64,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 0.25,
+              cursor: 'pointer',
+              color: 'text.secondary',
+              borderLeft: '1px solid',
+              borderColor: 'divider',
+              userSelect: 'none',
+              bgcolor: 'background.paper',
+              '&:active': { bgcolor: 'action.selected' },
+            }}
+          >
+            <MenuIcon size={22} />
+            <Typography sx={{ fontSize: '0.62rem', fontWeight: 500, lineHeight: 1 }}>More</Typography>
+          </Box>
+        </Paper>
+      )}
 
       {/* Business Switch Password Dialog */}
       <Dialog open={passwordDialog.open} onClose={handlePasswordClose} maxWidth="xs" fullWidth>
